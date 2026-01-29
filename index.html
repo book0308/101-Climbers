@@ -3,12 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>101 攀爬者 | Pro 最終修正版</title>
+    <title>101 攀爬者 | 最終打磨版</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         body { background-color: #020617; margin: 0; overflow: hidden; font-family: 'Courier New', Courier, monospace; touch-action: none; }
         #game-container { position: relative; width: 100%; max-width: 480px; height: 100vh; margin: 0 auto; background: #0f172a; overflow: hidden; }
         canvas { display: block; width: 100%; height: 100%; image-rendering: pixelated; }
+        .danger-pulse { animation: dangerPulse 0.5s infinite; }
+        @keyframes dangerPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
     </style>
 </head>
 <body>
@@ -81,7 +83,6 @@
 </div>
 
 <script>
-// --- Constants ---
 const CONSTANTS = {
     COLORS: {
         SKY_TOP: '#020617', SKY_BOTTOM: '#0f172a',
@@ -99,7 +100,8 @@ const CONSTANTS = {
         staminaDrain: 0.15, staminaRecover: 0.5,
         chalkDrain: 0.12, chalkRefill: 40,
         maxChalk: 100, pineappleBonus: 45,
-        restTimeReq: 120 // 2 seconds @ 60fps
+        restTimeReq: 120,
+        tolerance: 5 // 修正 3: 5px 容錯
     },
     KEYS: { UP: ['arrowup','w'], DOWN: ['arrowdown','s'], LEFT: ['arrowleft','a'], RIGHT: ['arrowright','d'], GRAB: ['z'], JUMP: ['x'], CHARGE: [' '] }
 };
@@ -109,13 +111,9 @@ const Game = {
     state: {
         active: false, startTime: 0,
         cameraY: 0, floor: 0, celebrationTime: 0,
-        player: { 
-            x: 0, y: 0, w: 24, h: 32, vx: 0, vy: 0, 
-            stamina: 100, maxStamina: 100, chalk: 100, 
-            isHolding: false, grabLock: false, charge: 0, restTimer: 0 
-        },
+        player: { x: 0, y: 0, w: 24, h: 32, vx: 0, vy: 0, stamina: 100, maxStamina: 100, chalk: 100, isHolding: false, grabLock: false, charge: 0, restTimer: 0 },
         inputs: {}, prevInputs: {},
-        objects: { grips: [], items: [], texts: [], wind: [], fireworks: [], flag: null },
+        objects: { grips: [], items: [], texts: [], wind: [], fireworks: [], feedbacks: [], flag: null },
         wind: { force: 0, timer: 0 }
     },
 
@@ -147,8 +145,7 @@ const Game = {
     generateLevel() {
         const { grips, items, texts } = this.state.objects;
         const { SETTINGS } = CONSTANTS;
-        let curY = 0, lastX = 200;
-        let patternCounter = 0; // 用於計算 1綠:N黃 的循環
+        let curY = 0, lastX = 200, normalCount = 0;
 
         const addGrip = (x, y, w, h, type, extra = {}) => {
             if (grips.some(g => Math.abs(g.y - y) < 40)) return false;
@@ -163,7 +160,6 @@ const Game = {
             return min + Math.random() * (max - min);
         };
 
-        // 1. 地基
         addGrip(0, 0, 400, 60, 'REST');
         texts.push({ x: 200, y: 150, text: "1F" });
         texts.push({ x: 200, y: 120, text: "按 'Z' 抓握 / 'X' 跳躍 / 'SPACE' 蓄力", size: 14 });
@@ -182,49 +178,37 @@ const Game = {
             let type = 'NORMAL';
             let w, h, jumpDist, extra = {};
 
-            // 檢查點：強制大平台 (30, 60, 90F)
             if (floor === 30 || floor === 60 || floor === 90) {
                 type = 'REST'; w = 300; h = 40; jumpDist = 200;
                 addGrip(50, curY, w, h, type);
                 texts.push({ x: 200, y: curY + 60, text: `${floor}F 大休息區`, size: 14 });
-                curY += jumpDist;
-                patternCounter = 0; // 重置循環
-                continue;
+                curY += jumpDist; patternCounter = 0; continue;
             }
 
-            // 階段 1: 0-20F (教學區，較簡單，隨機)
-            if (floor < 20) {
-                if (curY < 5 * SETTINGS.floorHeight) { // 1-5F 超簡單
-                    type = 'REST'; w = 150 + Math.random()*50; h = 24; jumpDist = 120;
-                } else {
-                    type = (patternCounter >= 2) ? 'REST' : 'NORMAL';
-                    if (type === 'REST') patternCounter = 0; else patternCounter++;
-                    w = type === 'REST' ? 150 : 60; h = type === 'REST' ? 24 : 140; jumpDist = 140;
-                }
+            // 修正 6: 95F+ 終極難度 (小型黃色色塊)
+            if (floor >= 95) {
+                type = 'NORMAL'; w = 20 + Math.random() * 10; h = 20 + Math.random() * 10; jumpDist = 220; // 需要抓握跳
             }
-            // 階段 2: 20-45F (1綠 : 3黃)
-            else if (floor < 45) {
-                type = (patternCounter >= 3) ? 'REST' : 'NORMAL';
-                if (type === 'REST') patternCounter = 0; else patternCounter++;
-                w = type === 'REST' ? 120 : 50; h = type === 'REST' ? 24 : 160; jumpDist = 160;
+            else if (floor >= 65) {
+                type = (Math.random() < 0.1) ? 'REST' : 'NORMAL'; 
+                w = type === 'REST' ? 60 : 20 + Math.random()*10; h = type === 'REST' ? 24 : 200 + Math.random()*100; jumpDist = 200;
+                if (type === 'NORMAL') extra = { vx: 2.5, range: 100, startX: 0 };
             }
-            // 階段 3: 45-65F (1綠 : 4~5黃)
-            else if (floor < 65) {
-                const threshold = 4 + Math.floor(Math.random()*2); // 4 or 5
-                type = (patternCounter >= threshold) ? 'REST' : 'NORMAL';
-                if (type === 'REST') patternCounter = 0; else patternCounter++;
+            else if (floor >= 45) {
+                const threshold = 4 + Math.floor(Math.random()*2);
+                type = (normalCount >= threshold) ? 'REST' : 'NORMAL';
+                if (type === 'REST') normalCount = 0; else normalCount++;
                 w = type === 'REST' ? 100 : 40; h = type === 'REST' ? 24 : 180; jumpDist = 180;
                 if (type === 'NORMAL' && Math.random() > 0.5) extra = { vx: 1.5, range: 60, startX: 0 };
             }
-            // 階段 4: 65F+ (高難度：細長黃色，綠色稀少)
+            else if (floor >= 20) {
+                type = (normalCount >= 3) ? 'REST' : 'NORMAL';
+                if (type === 'REST') normalCount = 0; else normalCount++;
+                w = type === 'REST' ? 120 : 50; h = type === 'REST' ? 24 : 160; jumpDist = 160;
+            }
             else {
-                // 10% 機率出現休息，否則全是黃色
-                type = (Math.random() < 0.1) ? 'REST' : 'NORMAL'; 
-                // 黃色色塊寬度極窄 (20-30px)
-                w = type === 'REST' ? 60 : 20 + Math.random()*10; 
-                h = type === 'REST' ? 24 : 200 + Math.random()*100; 
-                jumpDist = 200;
-                if (type === 'NORMAL') extra = { vx: 2.5, range: 100, startX: 0 };
+                if (curY < 5 * SETTINGS.floorHeight) { type = 'REST'; w = 150 + Math.random()*50; h = 24; jumpDist = 120; } 
+                else { type = (normalCount >= 2) ? 'REST' : 'NORMAL'; if (type === 'REST') normalCount=0; else normalCount++; w = type === 'REST' ? 150 : 60; h = type === 'REST' ? 24 : 140; jumpDist = 140; }
             }
 
             let tryX = getNextX(w, 180, curY);
@@ -234,4 +218,305 @@ const Game = {
                 if (tryX + extra.range + w > 380) extra.startX = 380 - w - extra.range;
             }
 
-            if (addGrip(extra.
+            if (addGrip(extra.startX || tryX, curY, w, h, type, extra)) {
+                items.forEach(it => { if (it.pendingPlace && Math.abs(it.y - curY) < 200) { it.x = lastX - 22; it.y = curY + h + 20; it.pendingPlace = false; } });
+                if (type === 'REST' && floor % 5 === 0) texts.push({ x: lastX, y: curY + 60, text: `${floor}F`, size: 14 });
+                curY += jumpDist;
+            } else curY += 50;
+        }
+
+        const finalY = 101 * SETTINGS.floorHeight;
+        addGrip(100, finalY, 200, 40, 'REST');
+        this.state.objects.flag = { x: 200, y: finalY + 40, w: 40, h: 60 };
+        texts.push({ x: 200, y: finalY + 120, text: "登頂！", size: 20 });
+    },
+
+    checkChalkRegen() {
+        const { items } = this.state.objects;
+        const { player, floor } = this.state;
+        const nearby = items.filter(it => it.type === 'CHALK' && it.active && Math.abs(it.y - player.y) < 800).length;
+        let max = floor < 30 ? 4 : (floor < 60 ? 3 : (floor < 90 ? 2 : 1));
+        if (nearby < max && Math.random() < 0.02) {
+             const spawnY = player.y + 300 + Math.random() * 300;
+             items.push({ x: Math.random() * 300 + 50, y: spawnY, w: 44, h: 44, type: 'CHALK', active: true, floatOffset: 0 });
+        }
+    },
+
+    physics(time) {
+        const { player, objects, wind } = this.state;
+        const { SETTINGS } = CONSTANTS;
+        const tol = SETTINGS.tolerance; // 5px
+
+        objects.grips.forEach(g => { 
+            if (g.vx) { g.prevX = g.x; g.x = g.startX + Math.sin(time / 500 * g.vx) * g.range; }
+        });
+
+        if (this.state.floor >= 90) {
+            wind.timer++;
+            if (wind.timer > 200) { wind.force = (Math.random()-0.5) * 2.0; wind.timer = 0; }
+            player.vx += wind.force * 0.1;
+        }
+
+        this.checkChalkRegen();
+
+        // 修正 3: 寬容度判定 (+5px)
+        const checkGrab = (g) => {
+            return player.x + player.w > g.x - tol && player.x < g.x + g.w + tol &&
+                   player.y + player.h > g.y - tol && player.y < g.y + g.h + tol;
+        };
+
+        // 修正 2: 摔落保護 (Fall Catch)
+        let standingOn = objects.grips.find(g => 
+            g.type === 'REST' && 
+            player.x + player.w > g.x && player.x < g.x + g.w && 
+            player.y <= g.y + g.h + 5 && player.y >= g.y + g.h - 20 && 
+            player.vy <= 0
+        );
+
+        // 修正 2: 無縫攀爬 (Union of Grips)
+        let touchingGrips = objects.grips.filter(g => checkGrab(g));
+        let canGrab = touchingGrips.length > 0 ? touchingGrips[0] : null;
+
+        if (objects.flag && player.x < objects.flag.x + objects.flag.w && player.x + player.w > objects.flag.x &&
+            player.y < objects.flag.y + objects.flag.h && player.y + player.h > objects.flag.y) { this.victory(); return; }
+
+        const holdingInput = this.isPressed('GRAB');
+        const jumpInput = this.justPressed('JUMP');
+        const chargeInput = this.isPressed('CHARGE');
+        const wasChargeInput = this.wasPressed('CHARGE');
+        const isCharging = player.charge > 0;
+
+        if (!holdingInput) player.grabLock = false;
+
+        // --- CLIMBING ---
+        if (holdingInput && canGrab && !player.grabLock) {
+            player.isHolding = true; player.vy = 0; player.vx = 0;
+            
+            if (canGrab.vx) { player.x += (canGrab.x - canGrab.prevX); }
+
+            player.stamina -= SETTINGS.staminaDrain;
+            player.chalk = Math.max(0, player.chalk - SETTINGS.chalkDrain);
+            if (player.chalk <= 0) player.stamina -= SETTINGS.staminaDrain;
+
+            // 修正 4: 力竭抖動效果
+            if (player.stamina <= 0) {
+                player.x += (Math.random() - 0.5) * 2; // Shake
+            }
+
+            if (!isCharging) {
+                if (this.isPressed('UP')) player.y += SETTINGS.climbSpeed;
+                if (this.isPressed('DOWN')) player.y -= SETTINGS.climbSpeed;
+                if (this.isPressed('LEFT')) player.x -= SETTINGS.climbSpeed;
+                if (this.isPressed('RIGHT')) player.x += SETTINGS.climbSpeed;
+            }
+
+            // 修正 2: 智能限制範圍 (Smart Clamp)
+            // 找出所有相連的 Grip，形成一個大範圍
+            let minX = canGrab.x - tol;
+            let maxX = canGrab.x + canGrab.w + tol;
+            let minY = canGrab.y - tol;
+            let maxY = canGrab.y + canGrab.h + tol;
+            
+            // 擴展到相鄰的 Grip (解決 1px 縫隙問題)
+            touchingGrips.forEach(g => {
+                minX = Math.min(minX, g.x - tol);
+                maxX = Math.max(maxX, g.x + g.w + tol);
+                minY = Math.min(minY, g.y - tol);
+                maxY = Math.max(maxY, g.y + g.h + tol);
+            });
+
+            // 修正 3: 上緣/左右寬容度
+            player.x = Math.max(minX, Math.min(maxX - player.w, player.x));
+            player.y = Math.min(maxY - player.h, player.y);
+
+            // 快速上牆
+            if (canGrab.type === 'REST' && this.isPressed('UP') && player.y + player.h >= canGrab.y + canGrab.h - 10) {
+                 player.isHolding = false; player.y = canGrab.y + canGrab.h;
+            }
+
+            if (player.stamina > 0 || (player.stamina <=0 && Math.random() > 0.1)) { // Chance to slip if stamina 0
+                if (chargeInput) player.charge = Math.min(SETTINGS.maxCharge, player.charge + 1.5);
+                else if (wasChargeInput) this.executeJump();
+                else if (jumpInput) this.executeJump();
+            } else {
+                // Fall off
+                player.isHolding = false; player.grabLock = true;
+            }
+
+        } 
+        // --- STANDING ---
+        else if (standingOn) {
+            player.isHolding = false; player.vy = 0; player.y = standingOn.y + standingOn.h;
+            if (standingOn.vx) { player.x += (standingOn.x - standingOn.prevX); }
+
+            const isMoving = this.isPressed('LEFT') || this.isPressed('RIGHT') || isCharging || jumpInput;
+            if (!isMoving) player.restTimer++; else player.restTimer = 0;
+
+            if (player.restTimer >= SETTINGS.restTimeReq) {
+                player.stamina = Math.min(player.maxStamina, player.stamina + SETTINGS.staminaRecover * 1.5);
+            }
+
+            if (!isCharging) {
+                if (this.isPressed('LEFT')) player.vx -= 1;
+                if (this.isPressed('RIGHT')) player.vx += 1;
+            } else { player.vx = 0; }
+            player.vx *= SETTINGS.friction;
+
+            if (chargeInput) player.charge = Math.min(SETTINGS.maxCharge, player.charge + 1.5);
+            else if (wasChargeInput || jumpInput) this.executeJump();
+
+        } 
+        // --- AIR ---
+        else {
+            player.isHolding = false; player.vy -= SETTINGS.gravity; 
+            player.restTimer = 0;
+            player.vx *= SETTINGS.airResistance;
+            if (this.isPressed('LEFT')) player.vx -= SETTINGS.airControl;
+            if (this.isPressed('RIGHT')) player.vx += SETTINGS.airControl;
+        }
+
+        player.x += player.vx; player.y += player.vy;
+        if (player.x < 0) { player.x = 0; player.vx = 0; }
+        if (player.x > 400 - player.w) { player.x = 400 - player.w; player.vx = 0; }
+
+        objects.items.forEach(it => {
+            if (!it.active || it.pendingPlace) return;
+            if (player.x < it.x + it.w && player.x + player.w > it.x && player.y < it.y + it.h && player.y + player.h > it.y) {
+                it.active = false;
+                // 修正 5: 道具文字特效
+                const txt = it.type === 'PINEAPPLE' ? '+45 MAX' : 'REFILL';
+                this.state.objects.feedbacks.push({ x: it.x, y: it.y, text: txt, life: 60, dy: 0 });
+                if (it.type === 'PINEAPPLE') { player.maxStamina += 10; player.stamina = Math.min(player.maxStamina, player.stamina + SETTINGS.pineappleBonus); }
+                else { player.chalk = 100; }
+            }
+        });
+
+        // Update Feedbacks
+        this.state.objects.feedbacks.forEach(fb => { fb.life--; fb.y += 1; });
+        this.state.objects.feedbacks = this.state.objects.feedbacks.filter(fb => fb.life > 0);
+
+        if (player.y < this.state.cameraY - 400) this.gameOver();
+    },
+
+    executeJump() {
+        const { player } = this.state;
+        const { SETTINGS } = CONSTANTS;
+        if (player.charge > 5) player.stamina = Math.max(0, player.stamina - SETTINGS.chargeJumpCost);
+        const power = SETTINGS.jumpPower * (1 + (player.charge / SETTINGS.maxCharge) * 1.0);
+        player.vy = power;
+        if (this.isPressed('LEFT')) player.vx = -4.5;
+        if (this.isPressed('RIGHT')) player.vx = 4.5;
+        player.charge = 0; player.isHolding = false;
+        if (this.isPressed('GRAB')) player.grabLock = true;
+    },
+
+    victory() { this.state.active = false; document.getElementById('end-screen').classList.remove('hidden'); document.getElementById('end-title').innerText = "登頂成功！"; this.updateEndStats(); this.celebrationLoop(); },
+    gameOver() { this.state.active = false; document.getElementById('end-screen').classList.remove('hidden'); document.getElementById('end-title').innerText = "挑戰失敗..."; document.getElementById('end-title').classList.add('text-red-500'); this.updateEndStats(); },
+    updateEndStats() { document.getElementById('end-floor').innerText = this.state.floor + " F"; document.getElementById('end-time').innerText = document.getElementById('timer-display').innerText; document.getElementById('ui').classList.add('hidden'); },
+    createFirework() {
+        const x = Math.random() * 400; const y = this.state.cameraY + 200 + Math.random() * 400; const color = `hsl(${Math.random()*360}, 100%, 50%)`;
+        for(let i=0; i<20; i++) { const angle = Math.random() * Math.PI * 2; const speed = Math.random() * 5; this.state.objects.fireworks.push({ x, y, vx: Math.cos(angle)*speed, vy: Math.sin(angle)*speed, color, life: 60 }); }
+    },
+    celebrationLoop() {
+        this.state.celebrationTime++;
+        if (this.state.celebrationTime % 20 === 0) this.createFirework();
+        const { fireworks } = this.state.objects;
+        fireworks.forEach(f => { f.x += f.vx; f.y += f.vy; f.vy += 0.1; f.life--; });
+        this.state.objects.fireworks = fireworks.filter(f => f.life > 0);
+        this.render(); requestAnimationFrame(() => this.celebrationLoop());
+    },
+
+    loop(time) {
+        if (!this.state.active) return;
+        this.physics(time);
+        const targetY = this.state.player.y - 300; this.state.cameraY += (targetY - this.state.cameraY) * 0.1;
+        this.state.floor = Math.floor(this.state.player.y / CONSTANTS.SETTINGS.floorHeight);
+        document.getElementById('floor-display').innerText = this.state.floor;
+        document.getElementById('stamina-val').innerText = `${Math.floor(this.state.player.stamina)} / ${Math.floor(this.state.player.maxStamina)}`;
+        document.getElementById('stamina-bar').style.width = (this.state.player.stamina / this.state.player.maxStamina * 100) + '%';
+        document.getElementById('chalk-val').innerText = Math.floor(this.state.player.chalk) + '%';
+        document.getElementById('chalk-bar').style.width = this.state.player.chalk + '%';
+        
+        // 修正 4: 體力 < 10% 閃爍
+        const sBar = document.getElementById('stamina-bar');
+        if (this.state.player.stamina < 10) sBar.className = "h-full bg-red-500 danger-pulse";
+        else if (this.state.player.stamina < 30) sBar.className = "h-full bg-orange-500";
+        else sBar.className = "h-full bg-gradient-to-r from-sky-600 to-sky-400";
+
+        const diff = Date.now() - this.state.startTime;
+        document.getElementById('timer-display').innerText = `${Math.floor(diff/60000).toString().padStart(2,'0')}:${Math.floor((diff/1000)%60).toString().padStart(2,'0')}:${Math.floor((diff%1000)/10).toString().padStart(2,'0')}`;
+        this.render();
+        this.state.prevInputs = { ...this.state.inputs };
+        requestAnimationFrame(t => this.loop(t));
+    },
+
+    render() {
+        const { ctx, canvas } = this;
+        const { cameraY, player, objects, wind } = this.state;
+        const { COLORS } = CONSTANTS;
+
+        ctx.fillStyle = COLORS.SKY_BOTTOM; ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.save(); ctx.translate(0, canvas.height); ctx.scale(1, -1); ctx.translate(0, -cameraY);
+
+        objects.grips.forEach(g => {
+            ctx.fillStyle = g.type === 'REST' ? COLORS.GRIP_REST : COLORS.GRIP_NORMAL;
+            if (g.type === 'NORMAL' && Math.floor(g.y/400) > 30) { ctx.beginPath(); ctx.moveTo(g.x+10, g.y); ctx.lineTo(g.x+g.w, g.y); ctx.lineTo(g.x+g.w-10, g.y+g.h); ctx.lineTo(g.x, g.y+g.h); ctx.fill(); }
+            else ctx.fillRect(g.x, g.y, g.w, g.h);
+        });
+
+        objects.texts.forEach(t => { ctx.save(); ctx.translate(t.x, t.y); ctx.scale(1, -1); ctx.fillStyle = "#fff"; ctx.font = "14px Arial"; ctx.fillText(t.text, 0, 0); ctx.restore(); });
+        
+        if (objects.flag) {
+            const f = objects.flag;
+            ctx.fillStyle = "#fff"; ctx.fillRect(f.x, f.y, 4, f.h);
+            ctx.fillStyle = "#f43f5e"; ctx.beginPath(); ctx.moveTo(f.x+4, f.y+f.h); ctx.lineTo(f.x+40, f.y+f.h-15); ctx.lineTo(f.x+4, f.y+f.h-30); ctx.fill();
+        }
+
+        objects.items.forEach(it => {
+            if (!it.active || it.pendingPlace) return;
+            it.floatOffset = (it.floatOffset || 0) + 0.1; const fy = Math.sin(it.floatOffset) * 5;
+            ctx.fillStyle = COLORS.ITEM_BG; ctx.strokeStyle = it.type==='PINEAPPLE'?COLORS.BORDER_PINEAPPLE:COLORS.BORDER_CHALK;
+            ctx.lineWidth = 2; ctx.beginPath(); ctx.roundRect(it.x, it.y + fy, it.w, it.h, 8); ctx.fill(); ctx.stroke();
+            ctx.save(); ctx.translate(it.x + it.w/2, it.y + it.h/2 + fy); ctx.scale(1, -1); ctx.font = "24px Arial"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(it.type==='PINEAPPLE'?'🍍':'🥡', 0, 0); ctx.restore();
+        });
+
+        objects.feedbacks.forEach(fb => {
+            ctx.save(); ctx.translate(fb.x, fb.y); ctx.scale(1, -1);
+            ctx.fillStyle = "#fff"; ctx.font = "bold 20px Arial"; ctx.fillText(fb.text, 0, 0);
+            ctx.restore();
+        });
+
+        objects.fireworks.forEach(f => { ctx.fillStyle = f.color; ctx.fillRect(f.x, f.y, 4, 4); });
+
+        const squash = player.charge / CONSTANTS.SETTINGS.maxCharge;
+        const dW = player.w * (1 + squash * 0.4), dH = player.h * (1 - squash * 0.4), pX = player.x - (dW - player.w) / 2;
+
+        // 修正 1: 休息呼吸燈特效 (加粗, 呼吸感)
+        if (player.restTimer >= CONSTANTS.SETTINGS.restTimeReq) {
+            ctx.save();
+            const breath = Math.sin(Date.now() / 200) * 3; // 呼吸幅度
+            ctx.shadowBlur = 10 + breath;
+            ctx.shadowColor = CONSTANTS.COLORS.REST_GLOW;
+            ctx.strokeStyle = CONSTANTS.COLORS.REST_GLOW;
+            ctx.lineWidth = 4 + breath * 0.5; // 加粗線條
+            ctx.strokeRect(pX, player.y, dW, dH);
+            ctx.restore();
+        }
+
+        if (player.isHolding) { ctx.save(); ctx.strokeStyle = "rgba(255, 255, 255, 0.8)"; ctx.setLineDash([6, 4]); ctx.strokeRect(pX - 6, player.y - 6, dW + 12, dH + 12); ctx.restore(); }
+        if (player.charge > 5) { ctx.strokeStyle = player.charge >= CONSTANTS.SETTINGS.maxCharge ? COLORS.PLAYER_MAX_CHARGE : '#fff'; ctx.lineWidth = 2; ctx.strokeRect(pX - 2, player.y - 2, dW + 4, dH + 4); }
+
+        // 修正 4: 力竭變色
+        if (player.stamina <= 0 && player.isHolding) ctx.fillStyle = "#ef4444";
+        else ctx.fillStyle = COLORS.PLAYER;
+        
+        ctx.fillRect(pX, player.y, dW, dH);
+        if (player.charge > 0) { ctx.fillStyle = "#fff"; ctx.fillRect(pX, player.y + dH + 8, dW * squash, 4); }
+        ctx.restore();
+    }
+};
+
+Game.init();
+</script>
+</body>
+</html>
