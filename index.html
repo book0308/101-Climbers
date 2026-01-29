@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <title>101 攀爬者 | 官方網頁版</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        canvas { background: #020617; display: block; width: 100%; height: 100%; touch-action: none; }
+        .hud-shadow { text-shadow: 0 2px 4px rgba(0,0,0,0.5); }
+    </style>
+</head>
+<body class="bg-slate-950 flex items-center justify-center h-screen overflow-hidden select-none font-sans">
+
+<div id="root" class="relative w-full max-w-md h-full bg-slate-900 shadow-2xl border-x border-teal-900/30">
+    <div id="game-ui" class="absolute top-4 left-4 z-10 space-y-3 hidden">
+        <div class="bg-teal-950/80 backdrop-blur-md p-4 rounded-xl border border-teal-800/50 w-64 shadow-2xl">
+            <div class="flex justify-between items-end mb-1">
+                <span class="text-xs font-bold text-teal-400 uppercase">高度 <span id="god-label"></span></span>
+                <span class="text-2xl font-black leading-none"><span id="floor-display">0</span> <span class="text-sm font-normal text-teal-600">/ 101 F</span></span>
+            </div>
+            <div id="stamina-section" class="mt-4 space-y-3">
+                <div class="flex justify-between text-[10px] font-bold text-teal-500">
+                    <span>體力 STAMINA</span>
+                    <span id="stamina-val">100 / 100</span>
+                </div>
+                <div class="w-full bg-slate-900 rounded-full h-3 border border-teal-900/50">
+                    <div id="stamina-bar" class="h-full bg-sky-500 transition-all" style="width: 100%"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <canvas id="gameCanvas" width="400" height="800"></canvas>
+
+    <div id="overlay" class="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/95 z-20 p-8 text-center">
+        <div id="start-screen">
+            <div class="text-6xl mb-8 animate-bounce">🧗</div>
+            <h1 class="text-5xl font-black mb-4 italic text-transparent bg-clip-text bg-gradient-to-br from-teal-300 to-sky-500">101 攀爬者</h1>
+            <p class="text-slate-400 mb-10 text-sm">管理體力、對抗強風、征服 101 層巔峰。</p>
+            <button onclick="initGame()" class="bg-orange-500 hover:bg-orange-400 text-white px-16 py-5 rounded-2xl font-black text-2xl shadow-xl border-b-8 border-orange-700 active:border-b-0 active:translate-y-2">
+                開始攀登
+            </button>
+        </div>
+
+        <div id="end-screen" class="hidden">
+            <h2 id="end-title" class="text-5xl font-black mb-6">攀爬結束</h2>
+            <p id="end-time" class="text-2xl font-mono text-slate-300 mb-8 bg-slate-900 py-3 px-6 rounded-xl border border-slate-800">00:00:00</p>
+            
+            <div class="mb-8 p-4 bg-teal-900/20 rounded-xl border border-teal-800/50">
+                <p class="text-slate-400 text-xs mb-3">想在現實中挑戰攀岩嗎？</p>
+                <button onclick="window.open('https://www.klook.com/zh-TW/search?query=攀岩&aid=你的AID')" class="bg-teal-600 hover:bg-teal-500 text-white px-6 py-3 rounded-lg font-bold text-sm w-full transition-transform active:scale-95">
+                    🎟️ 查看 Klook 攀岩課程優惠
+                </button>
+            </div>
+
+            <button onclick="initGame()" class="bg-orange-500 text-white px-10 py-4 rounded-xl font-black text-xl w-full">再次挑戰</button>
+            <button onclick="location.reload()" class="mt-4 text-slate-500 underline text-sm">回到首頁</button>
+        </div>
+    </div>
+</div>
+
+<script>
+/** * 核心遊戲機制 (整合 GameCanvas.tsx & App.tsx)
+ */
+const SETTINGS = {
+    floorHeight: 400,
+    buildingWidth: 320,
+    totalFloors: 101,
+    gravity: 0.35,
+    staminaRecoverRate: 0.5,
+    staminaDrainRate: 0.15,
+    chalkDrainRate: 0.08
+};
+
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+let gameState = 'START';
+let stamina = 100, maxStamina = 100, floor = 0, gameTime = 0, startTime = 0;
+let player = { x: 188, y: 50, vx: 0, vy: 0, isHolding: false };
+let cameraY = 0;
+let keys = {};
+
+// 載入你的像素圖
+const playerImg = new Image();
+playerImg.src = './player.png'; 
+const bgImg = new Image();
+bgImg.src = './building.png';
+
+window.addEventListener('keydown', (e) => keys[e.key.toLowerCase()] = true);
+window.addEventListener('keyup', (e) => keys[e.key.toLowerCase()] = false);
+
+function initGame() {
+    gameState = 'PLAYING';
+    stamina = 100; floor = 0; cameraY = 0;
+    player = { x: 188, y: 50, vx: 0, vy: 0, isHolding: false };
+    startTime = Date.now();
+    document.getElementById('overlay').classList.add('hidden');
+    document.getElementById('game-ui').classList.remove('hidden');
+    requestAnimationFrame(update);
+}
+
+function update() {
+    if (gameState !== 'PLAYING') return;
+
+    // 簡單的攀爬邏輯 (模擬 GameCanvas.tsx)
+    if (keys['z']) {
+        player.isHolding = true;
+        stamina -= SETTINGS.staminaDrainRate;
+    } else {
+        player.isHolding = false;
+        player.vy -= SETTINGS.gravity;
+    }
+
+    if (!player.isHolding) {
+        player.y += player.vy;
+        if (keys['arrowleft']) player.x -= 3;
+        if (keys['arrowright']) player.x += 3;
+    } else {
+        player.vy = 0;
+        if (keys['arrowup']) player.y += 2;
+        if (keys['arrowdown']) player.y -= 2;
+    }
+
+    // 邊界檢查
+    if (player.y < cameraY - 100 || stamina <= 0) endGame('GAMEOVER');
+    if (player.y > 101 * 400) endGame('VICTORY');
+
+    floor = Math.floor(player.y / 400);
+    cameraY += (player.y - 320 - cameraY) * 0.12;
+
+    updateUI();
+    render();
+    requestAnimationFrame(update);
+}
+
+function updateUI() {
+    document.getElementById('floor-display').innerText
