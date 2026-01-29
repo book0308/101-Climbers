@@ -2,74 +2,222 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>101 攀爬者 | 網頁版</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>101 攀爬者 | 完整核心版</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        body { background: #020617; margin: 0; overflow: hidden; font-family: sans-serif; }
-        #game-container { position: relative; width: 100%; max-width: 400px; height: 100vh; margin: 0 auto; background: #0f172a; }
-        canvas { display: block; width: 100%; height: 100%; }
+        body { background: #020617; margin: 0; overflow: hidden; font-family: 'Courier New', Courier, monospace; }
+        canvas { display: block; width: 100%; height: 100vh; image-rendering: pixelated; }
     </style>
 </head>
 <body>
-<div id="game-container">
-    <div id="ui" class="absolute top-4 left-4 z-10 hidden">
-        <div class="bg-teal-950/80 p-4 rounded-xl border border-teal-800 w-60">
-            <div class="text-xs text-teal-400 font-bold">高度: <span id="floor">0</span>/101F</div>
-            <div class="text-[10px] text-sky-400 mt-2">體力: <span id="stamina-text">100</span>%</div>
-            <div class="w-full bg-slate-900 h-2 rounded-full mt-1 overflow-hidden">
-                <div id="stamina-bar" class="h-full bg-sky-500" style="width: 100%"></div>
+    <div id="game-container" class="relative w-full max-w-[450px] mx-auto bg-slate-900 shadow-2xl overflow-hidden">
+        <div id="ui" class="absolute top-4 left-4 z-10 hidden pointer-events-none">
+            <div class="bg-black/60 p-3 rounded-lg border border-teal-500/50 backdrop-blur-md">
+                <div class="text-teal-400 text-sm font-bold tracking-widest">高度: <span id="floor">0</span>/101F</div>
+                <div class="mt-2 flex items-center gap-2">
+                    <div class="text-[10px] text-sky-400">STAMINA</div>
+                    <div class="flex-1 w-32 bg-slate-800 h-2 rounded-full overflow-hidden">
+                        <div id="stamina-bar" class="h-full bg-gradient-to-r from-sky-600 to-teal-400" style="width: 100%"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <canvas id="gameCanvas"></canvas>
+
+        <div id="menu" class="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/90 z-20 transition-opacity">
+            <div class="text-7xl mb-6">🧗</div>
+            <h1 class="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-b from-teal-300 to-teal-600 italic mb-2">101 CLIMBERS</h1>
+            <p class="text-slate-500 text-xs mb-8 uppercase tracking-[0.2em]">Vertical Adventure Simulator</p>
+            
+            <div class="space-y-4 w-64 text-center">
+                <button id="startBtn" class="w-full bg-teal-500 hover:bg-teal-400 text-white py-4 rounded-xl font-bold text-xl shadow-[0_0_20px_rgba(20,184,166,0.4)] transition-all transform hover:scale-105">開始攀登</button>
+                <div class="grid grid-cols-2 gap-2 text-[10px] text-slate-400">
+                    <div class="p-2 border border-slate-800 rounded">左手抓握: [Z]</div>
+                    <div class="p-2 border border-slate-800 rounded">右手抓握: [X]</div>
+                </div>
             </div>
         </div>
     </div>
-    <canvas id="c"></canvas>
-    <div id="menu" class="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/90 p-8 text-center">
-        <div class="text-6xl mb-4">🧗</div>
-        <h1 class="text-4xl font-black mb-6 text-teal-400 italic">101 攀爬者</h1>
-        <button id="startBtn" class="bg-orange-500 text-white px-12 py-4 rounded-xl font-bold text-xl shadow-lg">開始攀登</button>
-        <div id="klook-ad" class="mt-8 hidden p-4 border border-teal-800 rounded-lg">
-            <p class="text-xs text-slate-400 mb-2">挑戰失敗？來場真的攀岩吧！</p>
-            <button onclick="window.open('https://www.klook.com/zh-TW/search?query=攀岩&aid=你的AID')" class="bg-teal-600 text-white px-4 py-2 rounded font-bold text-sm">🎟️ Klook 攀岩優惠</button>
-        </div>
-    </div>
-</div>
 
 <script>
-// 這段 JavaScript 已經把邏輯寫死在裡面，不需依賴 React
-const canvas = document.getElementById('c'), ctx = canvas.getContext('2d');
-let gameActive = false, stamina = 100, floor = 0, playerY = 50;
+/** 遊戲核心常數 **/
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const floorText = document.getElementById('floor');
+const staminaBar = document.getElementById('stamina-bar');
 
-document.getElementById('startBtn').addEventListener('click', () => {
+let gameActive = false;
+let floor = 0;
+let stamina = 100;
+let player = { x: 200, y: 0, vy: 0, leftGrip: false, rightGrip: false };
+let platforms = [];
+let items = [];
+let particles = [];
+let wind = { power: 0, target: 0, timer: 0 };
+let cameraY = 0;
+
+/** 初始化 **/
+function init() {
+    canvas.width = 450;
+    canvas.height = window.innerHeight;
+    player.y = canvas.height - 100;
+    cameraY = player.y - 400;
+    platforms = [];
+    items = [];
+    stamina = 100;
+    floor = 0;
+    
+    // 生成初始關卡
+    for(let i=0; i<20; i++) {
+        spawnPlatform(canvas.height - i * 150);
+    }
+}
+
+function spawnPlatform(y) {
+    const width = 60 + Math.random() * 40;
+    platforms.push({
+        x: Math.random() * (canvas.width - width),
+        y: y,
+        w: width,
+        h: 15
+    });
+    // 隨機生成道具 (止滑粉或鳳梨)
+    if(Math.random() > 0.8) {
+        items.push({ x: Math.random() * 400, y: y - 30, type: Math.random() > 0.5 ? '🥡' : '🍍', active: true });
+    }
+}
+
+/** 控制邏輯 **/
+window.addEventListener('keydown', (e) => {
+    if(e.key.toLowerCase() === 'z') player.leftGrip = true;
+    if(e.key.toLowerCase() === 'x') player.rightGrip = true;
+});
+window.addEventListener('keyup', (e) => {
+    if(e.key.toLowerCase() === 'z') player.leftGrip = false;
+    if(e.key.toLowerCase() === 'x') player.rightGrip = false;
+});
+
+document.getElementById('startBtn').onclick = () => {
+    init();
     gameActive = true;
     document.getElementById('menu').classList.add('hidden');
     document.getElementById('ui').classList.remove('hidden');
-    loop();
-});
+    update();
+};
 
-function loop() {
-    if (!gameActive) return;
-    // 簡單的機制測試：模擬攀爬
-    stamina -= 0.1;
-    playerY += 1;
-    floor = Math.floor(playerY / 10);
-    
-    // 更新介面
-    document.getElementById('floor').innerText = floor;
-    document.getElementById('stamina-bar').style.width = stamina + '%';
-    
-    // 繪圖
-    ctx.fillStyle = '#0f172a'; ctx.fillRect(0,0,canvas.width,canvas.height);
-    ctx.fillStyle = '#0ea5e9'; ctx.fillRect(180, canvas.height - 100, 40, 60); // 藍色方塊主角
-    
-    if (stamina <= 0) {
-        gameActive = false;
-        document.getElementById('menu').classList.remove('hidden');
-        document.getElementById('klook-ad').classList.remove('hidden');
-        document.getElementById('startBtn').innerText = '再次挑戰';
-    } else {
-        requestAnimationFrame(loop);
+/** 物理與更新 **/
+function update() {
+    if(!gameActive) return;
+
+    // 風力系統
+    wind.timer--;
+    if(wind.timer <= 0) {
+        wind.target = (Math.random() - 0.5) * 5;
+        wind.timer = 100 + Math.random() * 200;
     }
+    wind.power += (wind.target - wind.power) * 0.05;
+
+    // 攀爬邏輯
+    if(player.leftGrip || player.rightGrip) {
+        player.vy = -3; // 向上爬
+        stamina -= 0.15;
+    } else {
+        player.vy += 0.2; // 重力
+    }
+    
+    player.y += player.vy;
+    player.x += wind.power; // 受風力影響
+
+    // 邊界檢查
+    if(player.x < 0) player.x = 0;
+    if(player.x > canvas.width - 20) player.x = canvas.width - 20;
+
+    // 鏡頭跟隨
+    cameraY += (player.y - cameraY - 400) * 0.1;
+    floor = Math.max(floor, Math.floor((canvas.height - player.y) / 100));
+    floorText.innerText = Math.min(floor, 101);
+
+    // UI 更新
+    staminaBar.style.width = stamina + '%';
+    if(stamina <= 0) endGame("力竭墜落！");
+    if(floor >= 101) endGame("登頂成功！", true);
+
+    draw();
+    requestAnimationFrame(update);
 }
-canvas.width = 400; canvas.height = window.innerHeight;
+
+/** 繪圖 **/
+function draw() {
+    ctx.fillStyle = '#0f172a';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    ctx.save();
+    ctx.translate(0, -cameraY);
+
+    // 畫 101 大樓背景 (簡約像素感)
+    ctx.fillStyle = '#1e293b';
+    ctx.fillRect(100, -5000, 250, 10000);
+
+    // 畫風線
+    ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+    for(let i=0; i<10; i++) {
+        let wx = (Math.sin(Date.now()/500 + i) * 200) + 200;
+        let wy = cameraY + (i * 100);
+        ctx.beginPath();
+        ctx.moveTo(wx, wy);
+        ctx.lineTo(wx + wind.power * 10, wy + 20);
+        ctx.stroke();
+    }
+
+    // 畫抓點/平台
+    ctx.fillStyle = '#334155';
+    platforms.forEach(p => {
+        ctx.fillRect(p.x, p.y, p.w, p.h);
+        ctx.strokeStyle = '#5eead4';
+        ctx.strokeRect(p.x, p.y, p.w, p.h);
+    });
+
+    // 畫道具
+    items.forEach(item => {
+        if(item.active) {
+            ctx.font = '20px serif';
+            ctx.fillText(item.type, item.x, item.y);
+            // 簡單碰撞檢測
+            if(Math.abs(player.x - item.x) < 30 && Math.abs(player.y - item.y) < 30) {
+                item.active = false;
+                stamina = Math.min(100, stamina + 20);
+            }
+        }
+    });
+
+    // 畫主角 (藍色像素方塊)
+    ctx.fillStyle = '#06b6d4';
+    ctx.shadowBlur = 15;
+    ctx.shadowColor = '#06b6d4';
+    ctx.fillRect(player.x, player.y, 25, 25);
+    ctx.shadowBlur = 0;
+
+    // 手部動作視覺化
+    if(player.leftGrip) { ctx.fillStyle = '#f43f5e'; ctx.fillRect(player.x - 5, player.y, 8, 8); }
+    if(player.rightGrip) { ctx.fillStyle = '#f43f5e'; ctx.fillRect(player.x + 22, player.y, 8, 8); }
+
+    ctx.restore();
+}
+
+function endGame(msg, success = false) {
+    gameActive = false;
+    document.getElementById('menu').classList.remove('hidden');
+    document.getElementById('startBtn').innerText = '再次挑戰';
+    document.querySelector('h1').innerText = msg;
+    if(success) createFireworks();
+}
+
+function createFireworks() {
+    // 簡單的煙火邏輯可在此擴充
+    console.log("🎆 Fireworks!");
+}
 </script>
 </body>
 </html>
