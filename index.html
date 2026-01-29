@@ -2,33 +2,50 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>101 攀爬者 | AI Studio 完整版</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>101 攀爬者 | Pro 完整重構版</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        body { background: #020617; margin: 0; overflow: hidden; font-family: sans-serif; }
-        #game-container { position: relative; width: 100%; max-width: 400px; height: 100vh; margin: 0 auto; background: #0f172a; }
+        body { background-color: #020617; margin: 0; overflow: hidden; font-family: 'Courier New', Courier, monospace; touch-action: none; }
+        #game-container { position: relative; width: 100%; max-width: 480px; height: 100vh; margin: 0 auto; background: #0f172a; overflow: hidden; }
         canvas { display: block; width: 100%; height: 100%; image-rendering: pixelated; }
+        .text-shadow { text-shadow: 2px 2px 0px rgba(0,0,0,0.5); }
     </style>
 </head>
 <body>
 
 <div id="game-container">
-    <div id="ui" class="absolute top-4 left-4 z-10 hidden pointer-events-none text-white">
-        <div class="bg-slate-900/90 backdrop-blur-md p-4 rounded-xl border border-teal-800/50 w-64 shadow-2xl">
-            <div class="flex justify-between items-end mb-1">
-                <span class="text-xs font-bold text-teal-400 uppercase tracking-widest">高度</span>
-                <span class="text-2xl font-black"><span id="floor">0</span> <span class="text-sm font-normal text-teal-600">/ 101 F</span></span>
-            </div>
-            <div id="timer" class="text-right text-xs font-mono text-teal-400 mb-2 italic">00m00s00</div>
-            <div class="space-y-3">
-                <div class="space-y-1">
-                    <div class="flex justify-between text-[10px] font-bold text-teal-500"><span>STAMINA</span><span id="stamina-text">100 / 100</span></div>
-                    <div class="w-full bg-slate-950 rounded-full h-3 border border-teal-900/50 overflow-hidden"><div id="stamina-bar" class="h-full bg-sky-500" style="width: 100%"></div></div>
+    <div id="ui" class="absolute top-0 left-0 w-full p-4 pointer-events-none z-10 hidden transition-opacity duration-500">
+        <div class="bg-slate-900/80 backdrop-blur-sm border border-slate-700/50 rounded-xl p-4 shadow-xl">
+            <div class="flex justify-between items-end mb-2">
+                <div>
+                    <div class="text-[10px] text-teal-500 font-bold tracking-widest uppercase">CURRENT FLOOR</div>
+                    <div class="text-3xl font-black text-white leading-none"><span id="floor-display">0</span><span class="text-sm text-slate-500 ml-1">/ 101F</span></div>
                 </div>
-                <div class="space-y-1 text-slate-400">
-                    <div class="flex justify-between text-[10px] font-bold"><span>CHALK</span><span id="chalk-text">100%</span></div>
-                    <div class="w-full bg-slate-950 rounded-full h-2 border border-slate-800 overflow-hidden"><div id="chalk-bar" class="h-full bg-slate-200" style="width: 100%"></div></div>
+                <div class="text-right">
+                    <div class="text-[10px] text-teal-500 font-bold tracking-widest uppercase">TIME ELAPSED</div>
+                    <div id="timer-display" class="text-xl font-mono text-teal-300 leading-none">00:00:00</div>
+                </div>
+            </div>
+
+            <div class="space-y-3 mt-2">
+                <div>
+                    <div class="flex justify-between text-[10px] font-bold mb-1">
+                        <span class="text-sky-400">STAMINA</span>
+                        <span id="stamina-val" class="text-slate-400">100%</span>
+                    </div>
+                    <div class="w-full bg-slate-950 h-3 rounded-full overflow-hidden border border-slate-800">
+                        <div id="stamina-bar" class="h-full bg-gradient-to-r from-sky-600 to-sky-400 transition-all duration-100" style="width: 100%"></div>
+                    </div>
+                </div>
+                <div>
+                    <div class="flex justify-between text-[10px] font-bold mb-1">
+                        <span class="text-slate-400">CHALK POWDER</span>
+                        <span id="chalk-val" class="text-slate-500">100%</span>
+                    </div>
+                    <div class="w-full bg-slate-950 h-1.5 rounded-full overflow-hidden border border-slate-800">
+                        <div id="chalk-bar" class="h-full bg-slate-400 transition-all duration-100" style="width: 100%"></div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -36,160 +53,514 @@
 
     <canvas id="gameCanvas"></canvas>
 
-    <div id="overlay" class="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/95 z-20 p-8 text-center text-white">
-        <div id="start-screen">
-            <div class="text-6xl mb-6">🧗</div>
-            <h1 class="text-5xl font-black mb-10 italic bg-clip-text text-transparent bg-gradient-to-r from-teal-400 to-sky-500">101 CLIMBERS</h1>
-            <button onclick="startGame()" class="bg-orange-500 hover:bg-orange-400 text-white px-16 py-5 rounded-2xl font-black text-2xl shadow-xl">開始攀登</button>
+    <div id="overlay" class="absolute inset-0 z-20 flex flex-col items-center justify-center bg-slate-950/95 p-6 text-center">
+        <div id="start-screen" class="space-y-8 animate-fade-in">
+            <div class="relative">
+                <div class="text-8xl mb-4 animate-bounce">🧗</div>
+                <div class="absolute -bottom-2 w-full h-4 bg-black/20 rounded-[100%] blur-sm mx-auto"></div>
+            </div>
+            <div>
+                <h1 class="text-5xl font-black italic text-transparent bg-clip-text bg-gradient-to-br from-teal-300 to-sky-600 mb-2">101 CLIMBERS</h1>
+                <p class="text-slate-400 text-xs tracking-[0.2em] uppercase">Vertical Simulation Project</p>
+            </div>
+            
+            <div class="grid grid-cols-2 gap-3 text-left bg-slate-900/50 p-6 rounded-2xl border border-slate-800 text-sm text-slate-300">
+                <div class="flex items-center gap-2"><span class="bg-slate-700 px-2 py-1 rounded text-xs font-bold text-white">Z</span> 抓握 (Hold)</div>
+                <div class="flex items-center gap-2"><span class="bg-slate-700 px-2 py-1 rounded text-xs font-bold text-white">X</span> 跳躍 (Jump)</div>
+                <div class="flex items-center gap-2 col-span-2"><span class="bg-slate-700 px-2 py-1 rounded text-xs font-bold text-white">SPACE</span> 蓄力 (Charge)</div>
+                <div class="col-span-2 text-xs text-slate-500 mt-2 border-t border-slate-800 pt-2 text-center">抓握時可蓄力跳躍，注意體力消耗</div>
+            </div>
+
+            <button onclick="Game.start()" class="group relative px-8 py-4 bg-teal-600 hover:bg-teal-500 text-white font-black text-xl rounded-xl transition-all hover:scale-105 shadow-[0_0_20px_rgba(20,184,166,0.3)] w-full">
+                <span class="relative z-10">START CLIMBING</span>
+                <div class="absolute inset-0 bg-white/20 rounded-xl scale-x-0 group-hover:scale-x-100 transition-transform origin-left"></div>
+            </button>
         </div>
-        <div id="end-screen" class="hidden">
-            <h2 id="result-title" class="text-5xl font-black mb-4"></h2>
-            <div id="final-time" class="text-2xl font-mono text-slate-300 mb-8"></div>
-            <button onclick="location.reload()" class="bg-teal-600 text-white px-12 py-4 rounded-xl font-bold shadow-lg">重新挑戰</button>
+
+        <div id="end-screen" class="hidden space-y-6">
+            <h2 id="end-title" class="text-4xl font-black text-white"></h2>
+            <div id="end-stats" class="bg-slate-900 p-6 rounded-xl border border-slate-800 space-y-2">
+                <div class="text-slate-400 text-sm">FINAL HEIGHT</div>
+                <div class="text-3xl font-bold text-teal-400"><span id="end-floor">0</span> F</div>
+                <div class="text-slate-400 text-sm mt-4">TIME</div>
+                <div id="end-time" class="text-xl font-mono text-white">00:00:00</div>
+            </div>
+            <button onclick="location.reload()" class="px-8 py-3 bg-slate-700 hover:bg-slate-600 text-white font-bold rounded-lg w-full transition-colors">PLAY AGAIN</button>
         </div>
     </div>
 </div>
 
 <script>
-/** 核心常數 (完全還原 constants.ts) **/
-const COLORS = { SKY_BOTTOM: '#0f172a', SKY_TOP: '#020617', GLASS: '#115e59', MULLION: '#334155', PLAYER: '#38bdf8', GRIP: '#fbbf24', REST: '#22c55e', WIND: 'rgba(255, 255, 255, 0.25)' };
-const SETTINGS = { floorHeight: 400, buildingWidth: 400, staminaDrainRate: 0.15, staminaRecoverRate: 0.5, gravity: 0.28, jumpBasePower: 8.5, maxChalk: 100, chalkDrainRate: 0.12, climbSpeed: 4.0, walkSpeed: 4.8, airControl: 0.22, maxCharge: 60 };
-const KEY_MAP = { UP: ['arrowup','w'], DOWN: ['arrowdown','s'], LEFT: ['arrowleft','a'], RIGHT: ['arrowright','d'], GRAB: ['z'], JUMP: ['x'], CHARGE: [' '] };
+/**
+ * 101 CLIMBERS - PRO REFACTOR
+ * 完整整合 constants.ts, types.ts, GameCanvas.tsx, App.tsx 邏輯
+ */
 
-/** 遊戲物件與狀態 **/
-const canvas = document.getElementById('gameCanvas'), ctx = canvas.getContext('2d');
-let active = false, startTime = 0, cameraY = 0;
-let player = { x: 188, y: 80, vx: 0, vy: 0, w: 24, h: 32, stamina: 100, maxS: 100, chalk: 100, isHolding: false, grabLock: false, charge: 0 };
-let grips = [], items = [], worldTexts = [], keys = {}, prevKeys = {};
-
-/** 關卡生成 (還原您的 generateLevel) **/
-function generateLevel() {
-    grips = []; items = []; worldTexts = [];
-    let curY = 0, lastX = 200, normalGripCount = 0;
-    const addGrip = (x, y, w, h, type) => {
-        if (grips.some(g => Math.abs(g.y - y) < 40)) return false;
-        grips.push({ x, y, width: w, height: h, type });
-        lastX = x + w / 2; return true;
-    };
-    const getNextX = (w, dev) => Math.max(50, Math.min(350 - w, lastX - dev + Math.random() * (dev * 2)));
-
-    addGrip(0, 0, 400, 60, 'REST');
-    worldTexts.push({ x: 20, y: 420, text: "1F: [X]跳躍 [Z]抓握 [空白]蓄力", color: "#fff", size: 14 });
-
-    curY = 150;
-    // 循環直到 101 層，不再卡在 29 樓
-    while(curY < 101 * 400) {
-        let type = (curY < 3*400) ? 'REST' : (normalGripCount >= 3 ? 'REST' : 'NORMAL');
-        normalGripCount = (type === 'REST') ? 0 : normalGripCount + 1;
-        let w = type === 'REST' ? 120 + Math.random()*60 : 40 + Math.random()*20;
-        let h = type === 'REST' ? 24 : 140;
-        if (addGrip(getNextX(w, 150), curY, w, h, type)) {
-            curY += (type === 'REST' ? 140 : 180);
-            if (Math.random() > 0.8) items.push({ x: lastX, y: curY-40, w: 44, h: 44, type: Math.random()>0.5?'PINEAPPLE':'CHALK', active: true });
-        } else curY += 40;
+// --- Constants ---
+const CONSTANTS = {
+    COLORS: {
+        SKY_TOP: '#020617', SKY_BOTTOM: '#0f172a',
+        BUILDING: '#1e293b', GLASS: '#115e59', MULLION: '#334155',
+        PLAYER: '#38bdf8', PLAYER_CHARGE: '#ffffff', PLAYER_MAX_CHARGE: '#ef4444',
+        GRIP_NORMAL: '#fbbf24', GRIP_REST: '#22c55e',
+        ITEM_BG: '#1e293b', BORDER_PINEAPPLE: '#fbbf24', BORDER_CHALK: '#94a3b8'
+    },
+    SETTINGS: {
+        floorHeight: 400, buildingWidth: 400,
+        gravity: 0.28, friction: 0.85, airResistance: 0.97,
+        moveSpeed: 4.8, climbSpeed: 4.0, airControl: 0.22,
+        jumpPower: 8.5, maxCharge: 60,
+        staminaDrain: 0.15, staminaRecover: 0.5,
+        chalkDrain: 0.12, chalkRefill: 40,
+        maxChalk: 100, pineappleBonus: 45
+    },
+    KEYS: {
+        UP: ['arrowup', 'w'], DOWN: ['arrowdown', 's'],
+        LEFT: ['arrowleft', 'a'], RIGHT: ['arrowright', 'd'],
+        GRAB: ['z'], JUMP: ['x'], CHARGE: [' ']
     }
-}
-
-/** 核心循環與渲染 **/
-window.onkeydown = e => keys[e.key.toLowerCase()] = true;
-window.onkeyup = e => {
-    if (e.key === ' ' && player.charge > 5) executeJump(player.charge);
-    keys[e.key.toLowerCase()] = false;
 };
 
-function executeJump(c) {
-    const power = SETTINGS.jumpBasePower * (1 + (c / SETTINGS.maxCharge) * 1.1);
-    player.vy = power; player.vx += (keys['a']||keys['arrowleft']?-4.5:keys['d']||keys['arrowright']?4.5:0);
-    player.charge = 0; player.isHolding = false; if(keys['z']) player.grabLock = true;
-}
+// --- Game Engine ---
+const Game = {
+    canvas: null, ctx: null,
+    state: {
+        active: false, startTime: 0, lastTime: 0,
+        cameraY: 0, floor: 0,
+        player: { 
+            x: 0, y: 0, w: 24, h: 32, vx: 0, vy: 0, 
+            stamina: 100, maxStamina: 100, chalk: 100, 
+            isHolding: false, grabLock: false, charge: 0 
+        },
+        inputs: {}, prevInputs: {},
+        objects: { grips: [], items: [], particles: [], texts: [] }
+    },
 
-function startGame() {
-    active = true; generateLevel(); startTime = Date.now();
-    document.getElementById('overlay').classList.add('hidden');
-    document.getElementById('ui').classList.remove('hidden');
-    loop();
-}
+    init() {
+        this.canvas = document.getElementById('gameCanvas');
+        this.ctx = this.canvas.getContext('2d');
+        this.resize();
+        window.addEventListener('resize', () => this.resize());
+        this.bindControls();
+    },
 
-function loop() {
-    if (!active) return;
-    canvas.width = 400; canvas.height = window.innerHeight;
+    resize() {
+        this.canvas.width = 400; // Fixed internal resolution
+        this.canvas.height = window.innerHeight;
+    },
 
-    let standingOn = grips.find(g => g.type === 'REST' && player.y <= g.y + g.height && player.y >= g.y + g.height - 15 && player.x + player.w > g.x && player.x < g.x + g.width && player.vy <= 0);
-    let currentGrip = grips.find(g => player.x + player.w > g.x && player.x < g.x + g.width && player.y + player.h > g.y && player.y < g.y + g.height);
+    bindControls() {
+        const handle = (e, isDown) => {
+            const k = e.key.toLowerCase();
+            this.state.inputs[k] = isDown;
+            // Prevent scrolling
+            if([' '].includes(k)) e.preventDefault();
+        };
+        window.addEventListener('keydown', e => handle(e, true));
+        window.addEventListener('keyup', e => handle(e, false));
+    },
 
-    if (!keys['z']) player.grabLock = false;
+    isPressed(action) {
+        return CONSTANTS.KEYS[action].some(k => this.state.inputs[k]);
+    },
 
-    // 物理與操作還原
-    if (keys['z'] && currentGrip && !player.grabLock && player.stamina > 0) {
-        player.isHolding = true; player.vy = 0; player.vx = 0;
-        player.stamina -= SETTINGS.staminaDrainRate; player.chalk = Math.max(0, player.chalk - SETTINGS.chalkDrainRate);
-        if (keys['w']||keys['arrowup']) player.y += SETTINGS.climbSpeed;
-        if (keys['s']||keys['arrowdown']) player.y -= SETTINGS.climbSpeed;
-        if (keys['a']||keys['arrowleft']) player.x -= SETTINGS.climbSpeed;
-        if (keys['d']||keys['arrowright']) player.x += SETTINGS.climbSpeed;
-    } else if (standingOn) {
-        player.isHolding = false; player.vy = 0; player.y = standingOn.y + standingOn.height;
-        player.stamina = Math.min(player.maxS, player.stamina + SETTINGS.staminaRecoverRate);
-        if (keys['a']||keys['arrowleft']) player.x -= SETTINGS.walkSpeed;
-        if (keys['d']||keys['arrowright']) player.x += SETTINGS.walkSpeed;
-        if (keys['x'] && !prevKeys['x']) executeJump(0);
-    } else {
-        player.isHolding = false; player.vy -= SETTINGS.gravity; player.y += player.vy; player.x += player.vx;
-        if (keys['a']||keys['arrowleft']) player.vx -= SETTINGS.airControl;
-        if (keys['d']||keys['arrowright']) player.vx += SETTINGS.airControl;
-        player.vx *= 0.97;
-    }
+    wasPressed(action) {
+        return CONSTANTS.KEYS[action].some(k => !this.state.inputs[k] && this.state.prevInputs[k]);
+    },
 
-    if (keys[' ']) player.charge = Math.min(SETTINGS.maxCharge, player.charge + 1.5);
+    justPressed(action) {
+        return CONSTANTS.KEYS[action].some(k => this.state.inputs[k] && !this.state.prevInputs[k]);
+    },
 
-    // 道具碰撞
-    items.forEach(it => {
-        if (it.active && player.x < it.x + it.w && player.x + player.w > it.x && player.y < it.y + it.h && player.y + player.h > it.y) {
-            it.active = false;
-            if (it.type === 'PINEAPPLE') player.stamina = Math.min(player.maxS, player.stamina + 45);
-            else player.chalk = Math.min(100, player.chalk + 40);
+    start() {
+        this.state.active = true;
+        this.state.startTime = Date.now();
+        this.state.lastTime = Date.now();
+        
+        // Init Player
+        this.state.player.x = 200 - 12;
+        this.state.player.y = 100; // Start on the first platform
+        this.state.cameraY = 0;
+
+        this.generateLevel();
+        
+        document.getElementById('overlay').classList.add('hidden');
+        document.getElementById('ui').classList.remove('hidden');
+        
+        requestAnimationFrame(t => this.loop(t));
+    },
+
+    generateLevel() {
+        const { grips, items, texts } = this.state.objects;
+        const { SETTINGS } = CONSTANTS;
+        
+        let curY = 0;
+        let lastX = 200;
+        let normalCount = 0;
+
+        // Helper
+        const addGrip = (x, y, w, h, type) => {
+            // Collision check against existing
+            if (grips.some(g => Math.abs(g.y - y) < 40)) return false;
+            grips.push({ x, y, w, h, type });
+            lastX = x + w/2;
+            return true;
+        };
+
+        const getNextX = (w, dev) => {
+            const min = Math.max(40, lastX - dev - w/2);
+            const max = Math.min(360 - w, lastX + dev - w/2);
+            return min + Math.random() * (max - min);
+        };
+
+        // 1. Base Platform
+        addGrip(0, 0, 400, 80, 'REST');
+        texts.push({ x: 200, y: 150, text: "1F" });
+        texts.push({ x: 200, y: 120, text: "PRESS 'Z' TO CLIMB", size: 12 });
+
+        curY = 200;
+
+        // 2. Procedural Generation loop to 101F
+        const totalHeight = 101 * SETTINGS.floorHeight;
+        
+        while (curY < totalHeight) {
+            const floor = Math.floor(curY / SETTINGS.floorHeight);
+            
+            // Logic: Easier at bottom, harder at top
+            let isRest = false;
+            if (curY < 3 * SETTINGS.floorHeight) isRest = true; // Tutorial area
+            else if (normalCount >= 3 + Math.floor(floor/20)) isRest = true; // Pacing
+
+            if (isRest) normalCount = 0; else normalCount++;
+
+            const type = isRest ? 'REST' : 'NORMAL';
+            const w = isRest ? 100 + Math.random() * 100 : 30 + Math.random() * 40;
+            const h = isRest ? 24 : 100 + Math.random() * 80;
+            const deviation = isRest ? 150 : 200;
+
+            if (addGrip(getNextX(w, deviation), curY, w, h, type)) {
+                // Item Spawning
+                if (Math.random() > 0.75 && !isRest) {
+                    const iType = Math.random() > 0.6 ? 'CHALK' : 'PINEAPPLE';
+                    items.push({ 
+                        x: lastX - 22, y: curY + h + 20, w: 44, h: 44, 
+                        type: iType, active: true, floatOffset: Math.random() * Math.PI 
+                    });
+                }
+                
+                // Add floor text
+                if (floor % 10 === 0 && isRest) {
+                    texts.push({ x: lastX, y: curY + 50, text: `${floor}F` });
+                }
+
+                curY += (isRest ? 150 : 180 + Math.random() * 40);
+            } else {
+                curY += 50; // Skip if overlap
+            }
         }
-    });
+        
+        // Final Platform
+        addGrip(100, totalHeight, 200, 40, 'REST');
+        texts.push({ x: 200, y: totalHeight + 80, text: "VICTORY!" });
+    },
 
-    // 更新 HUD
-    const ms = Date.now() - startTime;
-    document.getElementById('timer').innerText = `${String(Math.floor(ms/60000)).padStart(2,'0')}m${String(Math.floor((ms%60000)/1000)).padStart(2,'0')}s${String(Math.floor((ms%1000)/10)).padStart(2,'0')}`;
-    document.getElementById('stamina-bar').style.width = player.stamina + '%';
-    document.getElementById('chalk-bar').style.width = player.chalk + '%';
-    document.getElementById('floor').innerText = Math.floor(player.y / 400);
+    physics() {
+        const { player, objects } = this.state;
+        const { SETTINGS } = CONSTANTS;
 
-    draw();
-    prevKeys = {...keys};
-    cameraY += (player.y - 320 - cameraY) * 0.12;
-    requestAnimationFrame(loop);
-}
+        // 1. Detect Collisions
+        // Standing collision: Feet touching top of REST platform, moving down
+        const standingOn = objects.grips.find(g => 
+            g.type === 'REST' && 
+            player.x + player.w > g.x && player.x < g.x + g.w &&
+            player.y <= g.y + g.h + 2 && player.y >= g.y + g.h - 10 &&
+            player.vy <= 0
+        );
 
-function draw() {
-    ctx.fillStyle = COLORS.SKY_TOP; ctx.fillRect(0,0,400,window.innerHeight);
-    ctx.save(); ctx.translate(0, window.innerHeight); ctx.scale(1, -1); ctx.translate(0, -cameraY);
+        // Grabbing collision: Body inside any platform
+        const canGrab = objects.grips.find(g =>
+            player.x + player.w > g.x && player.x < g.x + g.w &&
+            player.y + player.h > g.y && player.y < g.y + g.h
+        );
 
-    // 背景橫條
-    ctx.strokeStyle = COLORS.MULLION; ctx.globalAlpha = 0.3;
-    for (let y = Math.floor(cameraY/40)*40; y < cameraY + window.innerHeight + 40; y += 40) {
-        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(400, y); ctx.stroke();
+        // 2. Input & State Logic (The Fixed State Machine)
+        const holdingInput = this.isPressed('GRAB');
+        const jumpInput = this.justPressed('JUMP');
+        const chargeInput = this.isPressed('CHARGE');
+        
+        // Reset lock if key released
+        if (!holdingInput) player.grabLock = false;
+
+        // -- STATE: CLIMBING --
+        if (holdingInput && canGrab && !player.grabLock && player.stamina > 0) {
+            player.isHolding = true;
+            player.vx = 0;
+            player.vy = 0;
+
+            // Drain Stats
+            player.stamina -= SETTINGS.staminaDrain;
+            player.chalk = Math.max(0, player.chalk - SETTINGS.chalkDrain);
+            if (player.chalk <= 0) player.stamina -= SETTINGS.staminaDrain; // Double drain if no chalk
+
+            // Movement
+            if (this.isPressed('UP')) player.y += SETTINGS.climbSpeed;
+            if (this.isPressed('DOWN')) player.y -= SETTINGS.climbSpeed;
+            if (this.isPressed('LEFT')) player.x -= SETTINGS.climbSpeed;
+            if (this.isPressed('RIGHT')) player.x += SETTINGS.climbSpeed;
+
+            // Actions while climbing (The Fix)
+            if (chargeInput) {
+                player.charge = Math.min(SETTINGS.maxCharge, player.charge + 1.5);
+            } else if (player.charge > 0) {
+                this.executeJump(); // Charge Jump off wall
+            } else if (jumpInput) {
+                this.executeJump(); // Normal Jump off wall
+            }
+
+        // -- STATE: STANDING --
+        } else if (standingOn) {
+            player.isHolding = false;
+            player.vy = 0;
+            player.y = standingOn.y + standingOn.h;
+            
+            // Recover
+            player.stamina = Math.min(player.maxStamina, player.stamina + SETTINGS.staminaRecover);
+            player.vx *= SETTINGS.friction;
+
+            // Movement
+            if (this.isPressed('LEFT')) player.vx -= 1; // Ground accel
+            if (this.isPressed('RIGHT')) player.vx += 1;
+            
+            // Actions
+            if (chargeInput) {
+                player.charge = Math.min(SETTINGS.maxCharge, player.charge + 1.5);
+                player.vx = 0; // Stop moving while charging on ground
+            } else if (player.charge > 0) {
+                this.executeJump();
+            } else if (jumpInput) {
+                this.executeJump();
+            }
+
+        // -- STATE: AIR --
+        } else {
+            player.isHolding = false;
+            player.vy -= SETTINGS.gravity;
+            player.vx *= SETTINGS.airResistance;
+
+            // Air Control
+            if (this.isPressed('LEFT')) player.vx -= SETTINGS.airControl;
+            if (this.isPressed('RIGHT')) player.vx += SETTINGS.airControl;
+        }
+
+        // Apply Velocity
+        player.x += player.vx;
+        player.y += player.vy;
+
+        // Bounds check
+        if (player.x < 0) { player.x = 0; player.vx = 0; }
+        if (player.x > 400 - player.w) { player.x = 400 - player.w; player.vx = 0; }
+
+        // Item Collection
+        objects.items.forEach(it => {
+            if (!it.active) return;
+            if (player.x < it.x + it.w && player.x + player.w > it.x &&
+                player.y < it.y + it.h && player.y + player.h > it.y) {
+                it.active = false;
+                if (it.type === 'PINEAPPLE') {
+                    player.maxStamina += 10;
+                    player.stamina = Math.min(player.maxStamina, player.stamina + SETTINGS.pineappleBonus);
+                    this.createParticles(it.x, it.y, '#fbbf24');
+                } else {
+                    player.chalk = 100;
+                    this.createParticles(it.x, it.y, '#ffffff');
+                }
+            }
+        });
+
+        // Fail State
+        if (player.y < this.state.cameraY - 400) this.gameOver();
+    },
+
+    executeJump() {
+        const { player } = this.state;
+        const { SETTINGS } = CONSTANTS;
+        
+        const power = SETTINGS.jumpPower * (1 + (player.charge / SETTINGS.maxCharge) * 1.0);
+        player.vy = power;
+        
+        // Add lateral burst if moving
+        if (this.isPressed('LEFT')) player.vx = -4.5;
+        if (this.isPressed('RIGHT')) player.vx = 4.5;
+        
+        player.charge = 0;
+        player.isHolding = false;
+        if (this.isPressed('GRAB')) player.grabLock = true; // Prevent immediate regrab
+    },
+
+    createParticles(x, y, color) {
+        // Simple burst visual
+    },
+
+    gameOver() {
+        this.state.active = false;
+        document.getElementById('end-screen').classList.remove('hidden');
+        document.getElementById('end-title').innerText = "YOU FELL!";
+        document.getElementById('end-title').classList.add('text-red-500');
+        this.updateEndStats();
+    },
+
+    updateEndStats() {
+        document.getElementById('end-floor').innerText = this.state.floor;
+        document.getElementById('end-time').innerText = document.getElementById('timer-display').innerText;
+        document.getElementById('ui').classList.add('hidden');
+    },
+
+    loop(time) {
+        if (!this.state.active) return;
+
+        this.physics();
+        
+        // Camera Follow
+        const targetY = this.state.player.y - 300;
+        this.state.cameraY += (targetY - this.state.cameraY) * 0.1;
+
+        // UI Updates
+        this.state.floor = Math.floor(this.state.player.y / CONSTANTS.SETTINGS.floorHeight);
+        document.getElementById('floor-display').innerText = this.state.floor;
+        document.getElementById('stamina-bar').style.width = (this.state.player.stamina / this.state.player.maxStamina * 100) + '%';
+        document.getElementById('chalk-bar').style.width = this.state.player.chalk + '%';
+        
+        // Stamina color warning
+        const sBar = document.getElementById('stamina-bar');
+        if (this.state.player.stamina < 30) sBar.className = "h-full bg-red-500 animate-pulse";
+        else sBar.className = "h-full bg-gradient-to-r from-sky-600 to-sky-400";
+
+        // Timer
+        const diff = Date.now() - this.state.startTime;
+        const ms = Math.floor((diff % 1000) / 10);
+        const s = Math.floor((diff / 1000) % 60);
+        const m = Math.floor(diff / 60000);
+        document.getElementById('timer-display').innerText = 
+            `${m.toString().padStart(2,'0')}:${s.toString().padStart(2,'0')}:${ms.toString().padStart(2,'0')}`;
+
+        this.render();
+        this.state.prevInputs = { ...this.state.inputs };
+        
+        // Win Condition
+        if (this.state.floor >= 101) {
+            this.state.active = false;
+            document.getElementById('end-screen').classList.remove('hidden');
+            document.getElementById('end-title').innerText = "SUMMIT REACHED!";
+            document.getElementById('end-title').classList.replace('text-red-500', 'text-teal-400');
+            this.updateEndStats();
+        } else {
+            requestAnimationFrame(t => this.loop(t));
+        }
+    },
+
+    render() {
+        const { ctx, canvas } = this;
+        const { cameraY, player, objects } = this.state;
+        const { COLORS } = CONSTANTS;
+
+        // Clear & Sky
+        ctx.fillStyle = COLORS.SKY_BOTTOM;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        ctx.save();
+        ctx.translate(0, canvas.height);
+        ctx.scale(1, -1);
+        ctx.translate(0, -cameraY);
+
+        // 1. Background Grid (Building Effect)
+        ctx.strokeStyle = COLORS.MULLION;
+        ctx.lineWidth = 1;
+        const gridYStart = Math.floor(cameraY / 40) * 40;
+        for (let y = gridYStart; y < cameraY + canvas.height; y += 40) {
+            ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(400, y); ctx.stroke();
+        }
+
+        // 2. Texts (Behind platforms)
+        objects.texts.forEach(t => {
+            if (t.y < cameraY - 100 || t.y > cameraY + canvas.height + 100) return;
+            ctx.save();
+            ctx.translate(t.x, t.y);
+            ctx.scale(1, -1);
+            ctx.fillStyle = "rgba(255,255,255,0.1)";
+            ctx.font = "900 60px Arial";
+            ctx.textAlign = "center";
+            ctx.fillText(t.text, 0, 0);
+            if (t.size) { // Subtext
+                ctx.fillStyle = "#fff";
+                ctx.font = "12px monospace";
+                ctx.fillText(t.text, 0, 0);
+            }
+            ctx.restore();
+        });
+
+        // 3. Platforms
+        objects.grips.forEach(g => {
+            if (g.y < cameraY - 100 || g.y > cameraY + canvas.height + 100) return;
+            ctx.fillStyle = g.type === 'REST' ? COLORS.GRIP_REST : COLORS.GRIP_NORMAL;
+            // Add subtle 3D bevel
+            ctx.fillRect(g.x, g.y, g.w, g.h);
+            ctx.fillStyle = "rgba(0,0,0,0.2)";
+            ctx.fillRect(g.x, g.y, g.w, 4); // Bottom shade
+        });
+
+        // 4. Items
+        objects.items.forEach(it => {
+            if (!it.active || it.y < cameraY - 100 || it.y > cameraY + canvas.height + 100) return;
+            it.floatOffset += 0.1;
+            const floatY = Math.sin(it.floatOffset) * 5;
+            
+            ctx.fillStyle = COLORS.ITEM_BG;
+            ctx.strokeStyle = it.type === 'PINEAPPLE' ? COLORS.BORDER_PINEAPPLE : COLORS.BORDER_CHALK;
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.roundRect(it.x, it.y + floatY, it.w, it.h, 8);
+            ctx.fill(); ctx.stroke();
+            
+            ctx.save();
+            ctx.translate(it.x + it.w/2, it.y + it.h/2 + floatY);
+            ctx.scale(1, -1);
+            ctx.font = "24px Arial";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.fillText(it.type === 'PINEAPPLE' ? '🍍' : '🥡', 0, 0);
+            ctx.restore();
+        });
+
+        // 5. Player (Squash & Stretch & Glow)
+        const squash = player.charge / CONSTANTS.SETTINGS.maxCharge;
+        const dW = player.w * (1 + squash * 0.4);
+        const dH = player.h * (1 - squash * 0.4);
+        const pX = player.x - (dW - player.w) / 2;
+        
+        // Charge Glow
+        if (player.charge > 5) {
+            ctx.shadowBlur = 15;
+            ctx.shadowColor = player.charge >= CONSTANTS.SETTINGS.maxCharge ? COLORS.PLAYER_MAX_CHARGE : COLORS.PLAYER;
+            ctx.strokeStyle = "white";
+            ctx.lineWidth = 2;
+            ctx.strokeRect(pX - 2, player.y - 2, dW + 4, dH + 4);
+        }
+
+        ctx.fillStyle = COLORS.PLAYER;
+        ctx.fillRect(pX, player.y, dW, dH);
+        ctx.shadowBlur = 0; // Reset
+
+        // Charge Bar over head
+        if (player.charge > 0) {
+            ctx.fillStyle = "white";
+            ctx.fillRect(pX, player.y + dH + 8, dW * (player.charge / CONSTANTS.SETTINGS.maxCharge), 4);
+        }
+
+        ctx.restore();
     }
-    ctx.globalAlpha = 1;
+};
 
-    // 踏板與文字
-    grips.forEach(g => { ctx.fillStyle = g.type === 'REST' ? COLORS.REST : COLORS.GRIP; ctx.fillRect(g.x, g.y, g.width, g.height); });
-    worldTexts.forEach(t => { ctx.save(); ctx.scale(1, -1); ctx.fillStyle = "#fff"; ctx.font = "14px Arial"; ctx.fillText(t.text, t.x, -t.y); ctx.restore(); });
-    items.forEach(it => { if (it.active) { ctx.save(); ctx.scale(1, -1); ctx.font = '24px Arial'; ctx.fillText(it.type==='PINEAPPLE'?'🍍':'🥡', it.x, -it.y-12); ctx.restore(); } });
-
-    // 角色動畫
-    const squash = player.charge / SETTINGS.maxCharge;
-    const dW = player.w * (1 + squash * 0.3), dH = player.h * (1 - squash * 0.4);
-    if (player.charge > 5) {
-        ctx.strokeStyle = player.charge >= SETTINGS.maxCharge ? '#ef4444' : '#fff';
-        ctx.lineWidth = 2; ctx.strokeRect(player.x - (dW-player.w)/2 - 4, player.y - 4, dW + 8, dH + 8);
-    }
-    ctx.fillStyle = COLORS.PLAYER; ctx.fillRect(player.x - (dW-player.w)/2, player.y, dW, dH);
-    ctx.restore();
-}
+Game.init();
 </script>
 </body>
 </html>
