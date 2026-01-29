@@ -2,12 +2,13 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>101 攀爬者 | 完整教學與關卡版</title>
+    <title>101 攀爬者 | 全功能修復版</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         body { background-color: #020617; margin: 0; overflow: hidden; font-family: sans-serif; }
         #game-container { position: relative; width: 100%; max-width: 400px; height: 100vh; margin: 0 auto; background: #0f172a; }
         canvas { display: block; width: 100%; height: 100%; image-rendering: pixelated; }
+        .font-mono-timer { font-family: 'Courier New', Courier, monospace; }
     </style>
 </head>
 <body>
@@ -16,19 +17,22 @@
     <div id="ui" class="absolute top-4 left-4 z-10 hidden pointer-events-none">
         <div class="bg-slate-900/80 backdrop-blur-md p-4 rounded-xl border border-teal-800/50 w-64 shadow-2xl">
             <div class="flex justify-between items-end mb-1">
-                <span class="text-xs font-bold text-teal-400 tracking-widest uppercase">高度</span>
+                <span class="text-xs font-bold text-teal-400 tracking-widest uppercase">高度 <span id="god-mode-label" class="text-red-500"></span></span>
                 <span class="text-2xl font-black text-white"><span id="floor">0</span> <span class="text-sm font-normal text-teal-600">/ 101 F</span></span>
             </div>
+            <div class="text-right text-xs font-mono-timer text-teal-400 mb-2 italic" id="timer-display">00m00s00</div>
+            
             <div class="mt-4 space-y-3">
                 <div class="space-y-1">
                     <div class="flex justify-between text-[10px] font-bold text-teal-500"><span>STAMINA</span><span id="stamina-text">100 / 100</span></div>
-                    <div class="w-full bg-slate-950 rounded-full h-3 border border-teal-900/50 overflow-hidden"><div id="stamina-bar" class="h-full bg-sky-500" style="width: 100%"></div></div>
+                    <div class="w-full bg-slate-950 rounded-full h-3 border border-teal-900/50 overflow-hidden"><div id="stamina-bar" class="h-full bg-sky-500 transition-all" style="width: 100%"></div></div>
                 </div>
                 <div class="space-y-1">
                     <div class="flex justify-between text-[10px] font-bold text-slate-400"><span>CHALK</span><span id="chalk-text">100%</span></div>
                     <div class="w-full bg-slate-950 rounded-full h-2 border border-slate-800 overflow-hidden"><div id="chalk-bar" class="h-full bg-slate-200" style="width: 100%"></div></div>
                 </div>
             </div>
+            <div onclick="toggleGodMode()" class="mt-2 w-full h-2 cursor-pointer opacity-0 hover:opacity-10 bg-white"></div>
         </div>
     </div>
 
@@ -38,111 +42,120 @@
         <div id="start-screen">
             <div class="text-6xl mb-6">🧗</div>
             <h1 class="text-5xl font-black mb-4 italic text-transparent bg-clip-text bg-gradient-to-br from-teal-300 to-sky-500">101 CLIMBERS</h1>
-            <p class="text-slate-400 mb-10 text-sm leading-relaxed">管理體力、對抗強風<br>征服 101 層巔峰</p>
-            <button onclick="startGame()" class="bg-orange-500 hover:bg-orange-400 text-white px-16 py-5 rounded-2xl font-black text-2xl shadow-xl">開始攀登</button>
+            <div class="text-slate-400 mb-8 text-sm space-y-1">
+                <p>[Z] 鍵：抓握 (Grab)</p>
+                <p>[X] 鍵：普通跳躍 (Jump)</p>
+                <p>[空白鍵]：蓄力跳躍 (Charge)</p>
+            </div>
+            <button onclick="startGame()" class="bg-orange-500 hover:bg-orange-400 text-white px-16 py-5 rounded-2xl font-black text-2xl shadow-xl border-b-8 border-orange-700 active:border-b-0 active:translate-y-2">開始攀登</button>
         </div>
         <div id="end-screen" class="hidden">
-            <h2 id="result-title" class="text-5xl font-black mb-8"></h2>
-            <button onclick="location.reload()" class="bg-teal-600 text-white px-12 py-4 rounded-xl font-bold shadow-lg">重新挑戰</button>
+            <h2 id="result-title" class="text-5xl font-black mb-4"></h2>
+            <div id="final-time" class="text-2xl font-mono-timer text-slate-300 mb-8"></div>
+            <button onclick="location.reload()" class="bg-teal-600 text-white px-12 py-4 rounded-xl font-bold">重新挑戰</button>
         </div>
     </div>
 </div>
 
 <script>
-/** 遊戲核心配置 **/
-const COLORS = { SKY_BOTTOM: '#0f172a', SKY_TOP: '#020617', BUILDING: '#1e293b', GLASS: '#115e59', MULLION: '#334155', PLAYER: '#38bdf8', GRIP: '#fbbf24', REST: '#22c55e' };
-const SETTINGS = { floorHeight: 400, totalFloors: 101, buildingWidth: 400, staminaDrainRate: 0.15, staminaRecoverRate: 0.5, gravity: 0.28, jumpBasePower: 8.5, maxChalk: 100, chalkDrainRate: 0.12 };
+/** 核心常數 (100% 採用用戶提供的 constants.ts) **/
+const COLORS = { SKY_BOTTOM: '#0f172a', SKY_TOP: '#020617', GLASS: '#115e59', MULLION: '#334155', PLAYER: '#38bdf8', GOD_PLAYER: '#ef4444', GRIP: '#fbbf24', REST: '#22c55e' };
+const SETTINGS = { floorHeight: 400, buildingWidth: 400, staminaDrainRate: 0.15, staminaRecoverRate: 0.5, gravity: 0.28, jumpBasePower: 8.5, maxChalk: 100, chalkDrainRate: 0.12, maxCharge: 60 };
+const KEY_MAP = { UP: ['arrowup', 'w'], DOWN: ['arrowdown', 's'], LEFT: ['arrowleft', 'a'], RIGHT: ['arrowright', 'd'], GRAB: ['z'], JUMP: ['x'], CHARGE: [' '] };
 
+/** 遊戲狀態 **/
 const canvas = document.getElementById('gameCanvas'), ctx = canvas.getContext('2d');
-let gameActive = false, stamina = 100, chalk = 100, floor = 0, cameraY = 0;
+let active = false, isGodMode = false, startTime = 0, timerInterval = null;
+let stamina = 100, chalk = 100, floor = 0, cameraY = 0, charge = 0;
 let player = { x: 200, y: 50, vx: 0, vy: 0, isHolding: false };
-let grips = [], items = [], worldTexts = [];
-let keys = {};
+let grips = [], worldTexts = [], keys = {};
 
-/** 關卡生成邏輯 (還原 generateLevel) **/
-const getBuildingWidthAtY = (y) => {
-    const f = y / SETTINGS.floorHeight;
-    return f < 90 ? SETTINGS.buildingWidth : SETTINGS.buildingWidth * (1 - (Math.min(1, (f - 90) / 11)) * 0.7);
+/** 物理與按鍵判斷 **/
+window.onkeydown = e => keys[e.key.toLowerCase()] = true;
+window.onkeyup = e => {
+    if (KEY_MAP.CHARGE.includes(e.key.toLowerCase()) && charge > 5) executeJump(charge);
+    keys[e.key.toLowerCase()] = false;
 };
 
-function generateLevel() {
-    grips = []; items = []; worldTexts = [];
-    let curY = 0, lastX = 200, normalGripCount = 0;
-
-    const addGrip = (x, y, w, h, type, extra = {}) => {
-        if (grips.some(g => Math.abs(g.y - y) < 40 && Math.abs(g.x - x) < 30)) return false;
-        grips.push({ x, y, width: w, height: h, type, ...extra });
-        lastX = x + w / 2; return true;
-    };
-
-    const getNextX = (w, dev, y) => {
-        const bW = getBuildingWidthAtY(y), centerX = 200;
-        const minX = Math.max(centerX - bW/2 + 30, lastX - dev - w/2);
-        const maxX = Math.min(centerX + bW/2 - w - 30, lastX + dev - w/2);
-        return minX + Math.random() * (maxX - minX);
-    };
-
-    // 初始地板與教學
-    addGrip(0, 0, 400, 60, 'REST'); 
-    worldTexts.push({ x: 40, y: 1 * 400 + 40, text: "1F: 使用方向鍵移動" });
-    worldTexts.push({ x: 40, y: 3 * 400 + 40, text: "3F: 綠色區塊可站立恢復體力" });
-    worldTexts.push({ x: 40, y: 5 * 400 + 40, text: "5F: 按住 Z 鍵可抓握黃色色塊" });
-
-    curY = 120;
-    while(curY < 30 * 400) {
-        let type = (normalGripCount >= 3) ? 'REST' : 'NORMAL';
-        normalGripCount = (type === 'REST') ? 0 : normalGripCount + 1;
-        let w = type === 'REST' ? 120 + Math.random()*60 : 60 + Math.random()*40;
-        let h = type === 'REST' ? 24 : 140;
-        if (addGrip(getNextX(w, 150, curY), curY, w, h, type)) curY += (type === 'REST' ? 140 : 120);
-        else curY += 40;
-    }
+function toggleGodMode() {
+    isGodMode = !isGodMode;
+    document.getElementById('god-mode-label').innerText = isGodMode ? "(GOD MODE)" : "";
 }
 
-/** 遊戲主循環 **/
-window.onkeydown = e => keys[e.key.toLowerCase()] = true;
-window.onkeyup = e => keys[e.key.toLowerCase()] = false;
-
 function startGame() {
-    gameActive = true; generateLevel();
+    active = true; generateLevel(); startTime = Date.now();
     document.getElementById('overlay').classList.add('hidden');
     document.getElementById('ui').classList.remove('hidden');
+    timerInterval = setInterval(updateTimer, 10);
     canvas.width = 400; canvas.height = window.innerHeight;
-    player.y = 80; cameraY = 0; stamina = 100; chalk = 100;
+    player.y = 80; player.stamina = isGodMode ? 1000 : 100;
     loop();
 }
 
-function loop() {
-    if (!gameActive) return;
+function updateTimer() {
+    const ms = Date.now() - startTime;
+    const m = Math.floor(ms / 60000), s = Math.floor((ms % 60000) / 1000), mil = Math.floor((ms % 1000) / 10);
+    document.getElementById('timer-display').innerText = `${String(m).padStart(2,'0')}m${String(s).padStart(2,'0')}s${String(mil).padStart(2,'0')}`;
+}
 
-    // 物理與操作
-    let standingOn = grips.find(g => g.type === 'REST' && player.y >= g.y + g.height && player.y <= g.y + g.height + 10 && player.x + 12 > g.x && player.x - 12 < g.x + g.width);
+function generateLevel() {
+    grips = []; worldTexts = []; let curY = 0, lastX = 200;
+    const addGrip = (x, y, w, h, type) => { grips.push({ x, y, width: w, height: h, type }); lastX = x + w/2; };
+    const getNextX = (w, dev) => Math.max(50, Math.min(350 - w, lastX - dev - w/2 + Math.random() * (dev * 2)));
+
+    addGrip(0, 0, 400, 60, 'REST'); // 起始地板
+    worldTexts.push({ x: 20, y: 450, text: "1F: 使用X普通跳躍 / 方向鍵移動" });
+    worldTexts.push({ x: 20, y: 1250, text: "3F: 綠色區塊站立可恢復體力" });
+    worldTexts.push({ x: 20, y: 2050, text: "5F: 按住 Z 鍵可抓握黃色色塊" });
+
+    curY = 150;
+    while(curY < 30 * 400) { // 初期邏輯：大量 REST 平台
+        let w = 120 + Math.random() * 60, type = 'REST';
+        if (curY > 5 * 400) type = Math.random() > 0.4 ? 'REST' : 'NORMAL';
+        addGrip(getNextX(w, 150), curY, w, (type==='REST'?24:140), type);
+        curY += 180;
+    }
+}
+
+function executeJump(c) {
+    const power = SETTINGS.jumpBasePower * (1 + (c / SETTINGS.maxCharge) * 1.1);
+    player.vy = power; charge = 0; player.isHolding = false;
+    if (!isGodMode) stamina -= 15;
+}
+
+function loop() {
+    if (!active) return;
+    let standingOn = grips.find(g => g.type === 'REST' && player.y >= g.y + g.height && player.y <= g.y + g.height + 12 && player.x + 12 > g.x && player.x - 12 < g.x + g.width);
     let currentGrip = grips.find(g => player.x + 12 > g.x && player.x - 12 < g.x + g.width && player.y + 32 > g.y && player.y < g.y + g.height);
 
-    if (keys['z'] && currentGrip && stamina > 0) {
+    // 按鍵邏輯修復
+    if (KEY_MAP.GRAB.some(k => keys[k]) && currentGrip && (stamina > 0 || isGodMode)) {
         player.isHolding = true; player.vy = 0;
-        stamina -= SETTINGS.staminaDrainRate;
-        chalk = Math.max(0, chalk - SETTINGS.chalkDrainRate);
-        if (keys['w']) player.y += 4; if (keys['s']) player.y -= 4;
+        if (!isGodMode) { stamina -= SETTINGS.staminaDrainRate; chalk = Math.max(0, chalk - SETTINGS.chalkDrainRate); }
+        if (KEY_MAP.UP.some(k => keys[k])) player.y += 4;
+        if (KEY_MAP.DOWN.some(k => keys[k])) player.y -= 4;
     } else if (standingOn) {
         player.isHolding = false; player.vy = 0; player.y = standingOn.y + standingOn.height;
-        stamina = Math.min(100, stamina + SETTINGS.staminaRecoverRate);
-        if (keys['a']) player.x -= 4; if (keys['d']) player.x += 4;
+        stamina = Math.min(isGodMode?1000:100, stamina + SETTINGS.staminaRecoverRate);
+        if (KEY_MAP.LEFT.some(k => keys[k])) player.x -= 4;
+        if (KEY_MAP.RIGHT.some(k => keys[k])) player.x += 4;
+        if (KEY_MAP.JUMP.some(k => keys[k])) player.vy = SETTINGS.jumpBasePower;
     } else {
         player.isHolding = false; player.vy -= SETTINGS.gravity; player.y += player.vy;
-        if (keys['a']) player.x -= 2; if (keys['d']) player.x += 2;
+        if (KEY_MAP.LEFT.some(k => keys[k])) player.x -= 3;
+        if (KEY_MAP.RIGHT.some(k => keys[k])) player.x += 3;
     }
 
-    // 更新 HUD
-    floor = Math.floor(player.y / 400);
-    document.getElementById('floor').innerText = floor;
-    document.getElementById('stamina-bar').style.width = stamina + '%';
+    if (KEY_MAP.CHARGE.some(k => keys[k])) charge = Math.min(SETTINGS.maxCharge, charge + 1.5);
+
+    // UI 更新
+    document.getElementById('floor').innerText = Math.floor(player.y / 400);
+    document.getElementById('stamina-bar').style.width = (stamina / (isGodMode?1000:100) * 100) + '%';
     document.getElementById('chalk-bar').style.width = chalk + '%';
 
     draw();
-
-    if (stamina <= 0 || player.y < cameraY - 100) endGame("力竭墜落");
-    if (floor >= 101) endGame("登頂成功", true);
+    if ((stamina <= 0 && !isGodMode) || player.y < cameraY - 100) endGame("力竭墜落");
+    if (player.y > 101 * 400) endGame("登頂成功", true);
 
     cameraY += (player.y - 300 - cameraY) * 0.1;
     requestAnimationFrame(loop);
@@ -151,31 +164,29 @@ function loop() {
 function draw() {
     ctx.fillStyle = COLORS.SKY_TOP; ctx.fillRect(0,0,400,canvas.height);
     ctx.save(); ctx.translate(0, canvas.height); ctx.scale(1, -1); ctx.translate(0, -cameraY);
-
-    // 大樓背景
-    ctx.fillStyle = COLORS.GLASS; ctx.globalAlpha = 0.3; ctx.fillRect(0, cameraY, 400, canvas.height + 500);
-    ctx.strokeStyle = COLORS.MULLION; ctx.globalAlpha = 1;
+    
+    // 背景窗櫺
+    ctx.strokeStyle = COLORS.MULLION; ctx.globalAlpha = 0.4;
     for(let y=0; y < 101*400; y+=40) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(400, y); ctx.stroke(); }
+    
+    // 關卡繪製
+    grips.forEach(g => { ctx.fillStyle = g.type === 'REST' ? COLORS.REST : COLORS.GRIP; ctx.globalAlpha = 1; ctx.fillRect(g.x, g.y, g.width, g.height); });
+    worldTexts.forEach(t => { ctx.save(); ctx.scale(1,-1); ctx.fillStyle="#fff"; ctx.font="12px Arial"; ctx.fillText(t.text, t.x, -t.y); ctx.restore(); });
 
-    // 教學文字
-    worldTexts.forEach(t => { if(t.y > cameraY && t.y < cameraY + 800) { ctx.save(); ctx.scale(1,-1); ctx.fillStyle="#fff"; ctx.font="14px Arial"; ctx.fillText(t.text, t.x, -t.y); ctx.restore(); }});
-
-    // 抓點與平台
-    grips.forEach(g => {
-        ctx.fillStyle = g.type === 'REST' ? COLORS.REST : COLORS.GRIP;
-        ctx.fillRect(g.x, g.y, g.width, g.height);
-    });
-
-    // 主角
-    ctx.fillStyle = COLORS.PLAYER; ctx.fillRect(player.x-12, player.y, 24, 32);
+    // 主角 (超人模式變紅)
+    ctx.fillStyle = isGodMode ? COLORS.GOD_PLAYER : COLORS.PLAYER;
+    ctx.fillRect(player.x-12, player.y, 24, 32);
+    if (charge > 5) { ctx.fillStyle = "#fff"; ctx.fillRect(player.x-12, player.y-10, (24 * (charge/SETTINGS.maxCharge)), 4); }
     ctx.restore();
 }
 
 function endGame(msg, win) {
-    gameActive = false;
+    active = false; clearInterval(timerInterval);
     document.getElementById('overlay').classList.remove('hidden');
+    document.getElementById('start-screen').classList.add('hidden');
+    document.getElementById('end-screen').classList.remove('hidden');
     document.getElementById('result-title').innerText = msg;
-    document.getElementById('result-title').style.color = win ? COLORS.REST : '#ef4444';
+    document.getElementById('final-time').innerText = "最終時間: " + document.getElementById('timer-display').innerText;
 }
 </script>
 </body>
