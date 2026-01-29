@@ -1,47 +1,172 @@
-export const COLORS = {
-  SKY_BOTTOM: '#0f172a',
-  SKY_TOP: '#020617',
-  BUILDING: '#1e293b',
-  GLASS: '#115e59',    
-  MULLION: '#334155',  
-  MULLION_GLOW: 'rgba(45, 212, 191, 0.2)',
-  PLAYER: '#38bdf8',
-  GOD_PLAYER: '#ef4444',
-  GRIP: '#fbbf24',    
-  REST: '#22c55e',    
-  WIND: 'rgba(255, 255, 255, 0.25)',
-  ITEM_BG: '#1e293b', 
-  BORDER_CHALK: '#94a3b8',   
-  BORDER_PINEAPPLE: '#fbbf24', 
-  FLAG: '#f43f5e',
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <title>101 攀爬者 | 完全還原版</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { background-color: #020617; margin: 0; overflow: hidden; font-family: sans-serif; }
+        #game-container { position: relative; width: 100%; max-width: 400px; height: 100vh; margin: 0 auto; background: #0f172a; }
+        canvas { display: block; width: 100%; height: 100%; image-rendering: pixelated; }
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <div id="ui" class="absolute top-4 left-4 z-10 hidden pointer-events-none">
+        <div class="bg-slate-900/80 backdrop-blur-md p-4 rounded-xl border border-teal-800/50 w-64 shadow-2xl">
+            <div class="flex justify-between items-end mb-1">
+                <span class="text-xs font-bold text-teal-400 tracking-widest uppercase">高度</span>
+                <span class="text-2xl font-black text-white"><span id="floor">0</span> <span class="text-sm font-normal text-teal-600">/ 101 F</span></span>
+            </div>
+            
+            <div class="mt-4 space-y-3">
+                <div class="space-y-1">
+                    <div class="flex justify-between text-[10px] font-bold">
+                        <span class="text-teal-500">STAMINA</span>
+                        <span id="stamina-text" class="text-sky-400">100 / 100</span>
+                    </div>
+                    <div class="w-full bg-slate-950 rounded-full h-3 border border-teal-900/50 overflow-hidden">
+                        <div id="stamina-bar" class="h-full bg-sky-500 transition-all" style="width: 100%"></div>
+                    </div>
+                </div>
+                <div class="space-y-1">
+                    <div class="flex justify-between text-[10px] font-bold">
+                        <span class="text-slate-400">CHALK</span>
+                        <span id="chalk-text" class="text-slate-300">100%</span>
+                    </div>
+                    <div class="w-full bg-slate-950 rounded-full h-2 border border-slate-800 overflow-hidden">
+                        <div id="chalk-bar" class="h-full bg-slate-200" style="width: 100%"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <div id="overlay" class="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/95 z-20 p-8 text-center">
+        <div id="start-screen">
+            <div class="text-6xl mb-6">🧗</div>
+            <h1 class="text-5xl font-black mb-4 italic text-transparent bg-clip-text bg-gradient-to-br from-teal-300 to-sky-500">101 攀爬者</h1>
+            <p class="text-slate-400 mb-10 text-sm">按 [Z] 抓握，[X] 跳躍，[空白鍵] 蓄力</p>
+            <button onclick="startGame()" class="bg-orange-500 hover:bg-orange-400 text-white px-16 py-5 rounded-2xl font-black text-2xl shadow-xl">開始攀登</button>
+        </div>
+        <div id="end-screen" class="hidden">
+            <h2 id="result-title" class="text-5xl font-black mb-8"></h2>
+            <button onclick="location.reload()" class="bg-teal-600 text-white px-12 py-4 rounded-xl font-bold">重新挑戰</button>
+        </div>
+    </div>
+</div>
+
+<script>
+/** 注入 constants.ts 的參數 **/
+const COLORS = {
+    SKY_BOTTOM: '#0f172a', SKY_TOP: '#020617', BUILDING: '#1e293b',
+    GLASS: '#115e59', MULLION: '#334155', PLAYER: '#38bdf8',
+    GRIP: '#fbbf24', REST: '#22c55e', WIND: 'rgba(255, 255, 255, 0.25)'
+};
+const SETTINGS = {
+    floorHeight: 400, totalFloors: 101, buildingWidth: 400,
+    staminaDrainRate: 0.15, staminaRecoverRate: 0.5,
+    gravity: 0.28, jumpBasePower: 8.5, maxChalk: 100, chalkDrainRate: 0.12
 };
 
-export const SETTINGS = {
-  floorHeight: 400,
-  totalFloors: 101,
-  buildingWidth: 400,
-  staminaDrainRate: 0.15,      // Constant drain during grab
-  staminaRecoverRate: 0.5,     // Gradual recovery per frame
-  restTimeToRecover: 120,      // 2 seconds stillness required
-  chargeJumpStaminaCost: 15,   
-  gravity: 0.28,               
-  maxCharge: 60,               
-  jumpBasePower: 8.5,          // 恢復原本較高的跳躍手感
-  airControl: 0.22,            
-  climbSpeed: 4.0,             
-  walkSpeed: 4.8,
-  targetStamina: 300,
-  maxChalk: 100,
-  chalkDrainRate: 0.12, 
-  chalkRefillAmount: 40,
-};
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+let gameActive = false, stamina = 100, chalk = 100, floor = 0, cameraY = 0;
+let player = { x: 200, y: 100, vx: 0, vy: 0, isHolding: false };
+let keys = {};
 
-export const KEY_CONTROLS = {
-  UP: ['ArrowUp', 'w'],
-  DOWN: ['ArrowDown', 's'],
-  LEFT: ['ArrowLeft', 'a'],
-  RIGHT: ['ArrowRight', 'd'],
-  GRAB: ['z'],                 
-  JUMP: ['x'],                 
-  CHARGE: [' '],               
-};
+window.addEventListener('keydown', e => keys[e.key.toLowerCase()] = true);
+window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
+
+function startGame() {
+    gameActive = true;
+    document.getElementById('overlay').classList.add('hidden');
+    document.getElementById('ui').classList.remove('hidden');
+    canvas.width = 400; canvas.height = window.innerHeight;
+    player.y = 100; cameraY = 0;
+    loop();
+}
+
+function loop() {
+    if (!gameActive) return;
+
+    // 核心邏輯：抓握與消耗
+    if (keys['z'] && stamina > 0) {
+        player.isHolding = true;
+        stamina -= SETTINGS.staminaDrainRate;
+        chalk = Math.max(0, chalk - SETTINGS.chalkDrainRate);
+        // 止滑粉耗盡，體力消耗加倍
+        if (chalk <= 0) stamina -= SETTINGS.staminaDrainRate * 2;
+        player.vy = 0;
+        if (keys['arrowup'] || keys['w']) player.y += 4;
+        if (keys['arrowdown'] || keys['s']) player.y -= 4;
+    } else {
+        player.isHolding = false;
+        player.vy -= SETTINGS.gravity;
+        player.y += player.vy;
+    }
+
+    // 左右移動
+    if (keys['arrowleft'] || keys['a']) player.x -= 4;
+    if (keys['arrowright'] || keys['d']) player.x += 4;
+
+    // 更新 HUD
+    floor = Math.floor(player.y / SETTINGS.floorHeight);
+    document.getElementById('floor').innerText = floor;
+    document.getElementById('stamina-bar').style.width = stamina + '%';
+    document.getElementById('chalk-bar').style.width = chalk + '%';
+    document.getElementById('chalk-text').innerText = Math.ceil(chalk) + '%';
+
+    // 渲染畫面 (還原配色)
+    draw();
+
+    if (stamina <= 0 || player.y < cameraY - 100) endGame("攀爬失敗");
+    if (floor >= 101) endGame("登頂成功", true);
+
+    cameraY += (player.y - 300 - cameraY) * 0.1;
+    requestAnimationFrame(loop);
+}
+
+function draw() {
+    // 背景漸層
+    const grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
+    grad.addColorStop(0, COLORS.SKY_TOP); grad.addColorStop(1, COLORS.SKY_BOTTOM);
+    ctx.fillStyle = grad; ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    ctx.save();
+    ctx.translate(0, canvas.height); ctx.scale(1, -1); ctx.translate(0, -cameraY);
+
+    // 畫 101 大樓玻璃與窗櫺
+    ctx.fillStyle = COLORS.GLASS; ctx.globalAlpha = 0.3;
+    ctx.fillRect(0, cameraY, canvas.width, canvas.height + 500);
+    ctx.strokeStyle = COLORS.MULLION; ctx.globalAlpha = 1;
+    for(let y=0; y < 101*400; y+=40) {
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke();
+    }
+
+    // 畫主角 (還原藍色)
+    ctx.fillStyle = COLORS.PLAYER;
+    ctx.fillRect(player.x - 12, player.y, 24, 32);
+    
+    // 如果正在抓握，顯示特效
+    if (player.isHolding) {
+        ctx.strokeStyle = '#fff'; ctx.strokeRect(player.x - 15, player.y - 3, 30, 38);
+    }
+
+    ctx.restore();
+}
+
+function endGame(msg, win) {
+    gameActive = false;
+    document.getElementById('overlay').classList.remove('hidden');
+    document.getElementById('start-screen').classList.add('hidden');
+    document.getElementById('end-screen').classList.remove('hidden');
+    document.getElementById('result-title').innerText = msg;
+    document.getElementById('result-title').style.color = win ? COLORS.REST : '#ef4444';
+}
+</script>
+</body>
+</html>
