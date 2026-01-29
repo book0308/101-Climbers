@@ -2,15 +2,17 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>101 攀爬者 | 核心邏輯校準版</title>
+    <title>101 攀爬者 | AI Studio 完整還原版</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         body { background-color: #020617; margin: 0; overflow: hidden; font-family: sans-serif; }
         #game-container { position: relative; width: 100%; max-width: 400px; height: 100vh; margin: 0 auto; background: #0f172a; }
         canvas { display: block; width: 100%; height: 100%; image-rendering: pixelated; }
+        .font-mono { font-family: 'Courier New', Courier, monospace; }
     </style>
 </head>
 <body>
+
 <div id="game-container">
     <div id="ui" class="absolute top-4 left-4 z-10 hidden pointer-events-none">
         <div class="bg-slate-900/80 backdrop-blur-md p-4 rounded-xl border border-teal-800/50 w-64 shadow-2xl text-white">
@@ -18,8 +20,8 @@
                 <span class="text-xs font-bold text-teal-400">高度</span>
                 <span class="text-2xl font-black"><span id="floor">0</span> <span class="text-sm font-normal text-teal-600">/ 101 F</span></span>
             </div>
-            <div class="text-right text-xs font-mono text-teal-400 mb-2 italic" id="timer">00m00s00</div>
-            <div class="mt-4 space-y-3">
+            <div id="timer" class="text-right text-xs font-mono text-teal-400 mb-2 italic">00m00s00</div>
+            <div class="space-y-3">
                 <div class="space-y-1">
                     <div class="flex justify-between text-[10px] font-bold text-teal-500"><span>STAMINA</span><span id="stamina-text">100 / 100</span></div>
                     <div class="w-full bg-slate-950 rounded-full h-3 border border-teal-900/50 overflow-hidden"><div id="stamina-bar" class="h-full bg-sky-500" style="width: 100%"></div></div>
@@ -31,58 +33,64 @@
             </div>
         </div>
     </div>
+
     <canvas id="gameCanvas"></canvas>
+
     <div id="overlay" class="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/95 z-20 p-8 text-center text-white">
         <div id="start-screen">
             <div class="text-6xl mb-6">🧗</div>
-            <h1 class="text-4xl font-black mb-8 italic">101 CLIMBERS</h1>
+            <h1 class="text-4xl font-black mb-10 italic bg-clip-text text-transparent bg-gradient-to-r from-teal-400 to-sky-500">101 CLIMBERS</h1>
             <button onclick="startGame()" class="bg-orange-500 hover:bg-orange-400 text-white px-16 py-5 rounded-2xl font-black text-2xl shadow-xl">開始攀登</button>
         </div>
     </div>
 </div>
 
 <script>
-// --- 核心參數 (100% 引用 constants.ts) ---
-const COLORS = { SKY_BOTTOM: '#0f172a', SKY_TOP: '#020617', GLASS: '#115e59', MULLION: '#334155', PLAYER: '#38bdf8', GRIP: '#fbbf24', REST: '#22c55e' };
-const SETTINGS = { floorHeight: 400, buildingWidth: 400, staminaDrainRate: 0.15, staminaRecoverRate: 0.5, gravity: 0.28, jumpBasePower: 8.5, maxChalk: 100, chalkDrainRate: 0.12, maxCharge: 60, climbSpeed: 4.0, walkSpeed: 4.8, airControl: 0.22 };
+/** 核心常數 (完全還原 constants.ts) **/
+const COLORS = { SKY_BOTTOM: '#0f172a', SKY_TOP: '#020617', BUILDING: '#1e293b', GLASS: '#115e59', MULLION: '#334155', PLAYER: '#38bdf8', GRIP: '#fbbf24', REST: '#22c55e', ITEM_BG: '#1e293b', BORDER_CHALK: '#94a3b8', BORDER_PINEAPPLE: '#fbbf24', WIND: 'rgba(255, 255, 255, 0.25)' };
+const SETTINGS = { floorHeight: 400, buildingWidth: 400, staminaDrainRate: 0.15, staminaRecoverRate: 0.5, gravity: 0.28, jumpBasePower: 8.5, maxChalk: 100, chalkDrainRate: 0.12, climbSpeed: 4.0, walkSpeed: 4.8, airControl: 0.22, maxCharge: 60 };
+const KEY_CONTROLS = { UP: ['arrowup','w'], DOWN: ['arrowdown','s'], LEFT: ['arrowleft','a'], RIGHT: ['arrowright','d'], GRAB: ['z'], JUMP: ['x'], CHARGE: [' '] };
 
-// --- 遊戲變數 ---
+/** 變數狀態 **/
+const canvas = document.getElementById('gameCanvas'), ctx = canvas.getContext('2d');
 let active = false, startTime = 0, cameraY = 0;
 let player = { x: 188, y: 80, vx: 0, vy: 0, w: 24, h: 32, stamina: 100, maxS: 100, chalk: 100, isHolding: false, grabLock: false, charge: 0 };
-let grips = [], keys = {}, prevKeys = {};
+let grips = [], items = [], worldTexts = [], windParticles = [], keys = {}, prevKeys = {};
 
-// --- 關卡生成邏輯校正 ---
+/** 關卡生成 (1:1 還原 generateLevel) **/
 function generateLevel() {
-    grips = []; let curY = 0, lastX = 200, normalGripCount = 0;
+    grips = []; items = []; worldTexts = [];
+    let curY = 0, lastX = 200, normalGripCount = 0;
     const addGrip = (x, y, w, h, type) => {
-        // 防止重疊的核心判定
-        if (grips.some(g => Math.abs(g.y - y) < 40)) return false; 
-        grips.push({ x, y, w, h, type });
-        lastX = x + w/2; return true;
+        if (grips.some(g => Math.abs(g.y - y) < 40 && Math.abs(g.x - x) < 30)) return false;
+        grips.push({ x, y, width: w, height: h, type });
+        lastX = x + w / 2; return true;
     };
-    const getNextX = (w, dev) => Math.max(50, Math.min(350 - w, lastX - dev + Math.random() * (dev * 2)));
+    const getNextX = (w, dev, y) => {
+        const minX = Math.max(50, lastX - dev - w/2), maxX = Math.min(350 - w, lastX + dev - w/2);
+        return minX + Math.random() * (maxX - minX);
+    };
 
-    addGrip(0, 0, 400, 60, 'REST'); // 起始地板
-    curY = 180;
-    
-    // 初期 (1F-5F)：純 REST 平台，無黃色色塊
-    while(curY < 5 * 400) {
-        let w = 150 + Math.random() * 80;
-        if (addGrip(getNextX(w, 100), curY, w, 24, 'REST')) curY += 160;
-        else curY += 40;
-    }
-    // 5F-30F：混合生成
-    while(curY < 30 * 400) {
-        let type = (normalGripCount >= 3) ? 'REST' : 'NORMAL';
+    addGrip(0, 0, 400, 60, 'REST'); 
+    worldTexts.push({ x: 20, y: 420, text: "1F: 使用X跳躍 / 方向鍵移動", size: 14, color: "#fff" });
+    worldTexts.push({ x: 20, y: 1220, text: "3F: 綠色區塊可站立恢復體力", size: 14, color: "#fff" });
+    worldTexts.push({ x: 20, y: 2020, text: "5F: 按住 Z 鍵可抓握黃色色塊", size: 14, color: "#fff" });
+
+    curY = 120;
+    // 重點修復：還原 101 層樓完整生成循環
+    while(curY < 101 * 400) {
+        let type = (curY < 5*400) ? 'REST' : (normalGripCount >= 3 ? 'REST' : 'NORMAL');
         normalGripCount = (type === 'REST') ? 0 : normalGripCount + 1;
-        let w = type === 'REST' ? 120 + Math.random()*60 : 60 + Math.random()*40;
+        let w = type === 'REST' ? 120 + Math.random()*60 : 40 + Math.random()*20; // 修正黃色寬度
         let h = type === 'REST' ? 24 : 140;
-        if (addGrip(getNextX(w, 150), curY, w, h, type)) curY += (type === 'REST' ? 150 : 120);
-        else curY += 40;
+        if (addGrip(getNextX(w, 150, curY), curY, w, h, type)) {
+            curY += (type === 'REST' ? 130 : 160);
+            if (Math.random() > 0.8) items.push({ x: lastX-22, y: curY-50, w: 44, h: 44, type: Math.random()>0.5?'PINEAPPLE':'CHALK', active: true });
+        } else curY += 40;
     }
 }
 
-// --- 物理與操作還原 ---
+/** 核心物理邏輯 (還原 update) **/
 window.onkeydown = e => keys[e.key.toLowerCase()] = true;
 window.onkeyup = e => {
     if (e.key === ' ' && player.charge > 5) executeJump(player.charge);
@@ -90,11 +98,9 @@ window.onkeyup = e => {
 };
 
 function executeJump(c) {
-    const powerMult = 1 + (c / SETTINGS.maxCharge) * 1.1;
-    player.vy = SETTINGS.jumpBasePower * powerMult;
-    player.vx += (keys['arrowleft'] || keys['a'] ? -4.5 : keys['arrowright'] || keys['d'] ? 4.5 : 0);
-    player.charge = 0; player.isHolding = false;
-    if (keys['z']) player.grabLock = true;
+    const power = SETTINGS.jumpBasePower * (1 + (c / SETTINGS.maxCharge) * 1.1);
+    player.vy = power; player.vx += (keys['a']||keys['arrowleft']?-4.5:keys['d']||keys['arrowright']?4.5:0);
+    player.charge = 0; player.isHolding = false; if(keys['z']) player.grabLock = true;
 }
 
 function startGame() {
@@ -106,73 +112,98 @@ function startGame() {
 
 function loop() {
     if (!active) return;
-    const canvas = document.getElementById('gameCanvas');
     canvas.width = 400; canvas.height = window.innerHeight;
 
-    // 1. 偵測碰撞 (還原您的判定邏輯)
-    let standingOn = grips.find(g => g.type === 'REST' && player.y <= g.y + g.h && player.y >= g.y + g.h - 15 && player.x + player.w > g.x && player.x < g.x + g.w && player.vy <= 0);
-    let currentGrip = grips.find(g => player.x + player.w > g.x && player.x < g.x + g.w && player.y + player.h > g.y && player.y < g.y + g.h);
+    let standingOn = grips.find(g => g.type === 'REST' && player.y <= g.y + g.height && player.y >= g.y + g.height - 15 && player.x + player.w > g.x && player.x < g.x + g.width && player.vy <= 0);
+    let currentGrip = grips.find(g => player.x + player.w > g.x && player.x < g.x + g.width && player.y + player.h > g.y && player.y < g.y + g.height);
 
     if (!keys['z']) player.grabLock = false;
 
-    // 2. 分支狀態處理
     if (keys['z'] && currentGrip && !player.grabLock && player.stamina > 0) {
         player.isHolding = true; player.vy = 0; player.vx = 0;
-        player.stamina -= SETTINGS.staminaDrainRate;
-        player.chalk = Math.max(0, player.chalk - SETTINGS.chalkDrainRate);
-        if (keys['arrowup'] || keys['w']) player.y += SETTINGS.climbSpeed;
-        if (keys['arrowdown'] || keys['s']) player.y -= SETTINGS.climbSpeed;
-        if (keys['arrowleft'] || keys['a']) player.x -= SETTINGS.climbSpeed;
-        if (keys['arrowright'] || keys['d']) player.x += SETTINGS.climbSpeed;
-        if (keys['x'] && !prevKeys['x']) executeJump(0);
+        player.stamina -= SETTINGS.staminaDrainRate; player.chalk = Math.max(0, player.chalk - SETTINGS.chalkDrainRate);
+        if (keys['w']||keys['arrowup']) player.y += SETTINGS.climbSpeed;
+        if (keys['s']||keys['arrowdown']) player.y -= SETTINGS.climbSpeed;
+        if (keys['a']||keys['arrowleft']) player.x -= SETTINGS.climbSpeed;
+        if (keys['d']||keys['arrowright']) player.x += SETTINGS.climbSpeed;
     } else if (standingOn) {
-        player.isHolding = false; player.vy = 0; player.y = standingOn.y + standingOn.h;
-        player.vx *= 0.85;
-        player.stamina = Math.min(100, player.stamina + SETTINGS.staminaRecoverRate);
-        if (keys['arrowleft'] || keys['a']) player.x -= SETTINGS.walkSpeed;
-        if (keys['arrowright'] || keys['d']) player.x += SETTINGS.walkSpeed;
+        player.isHolding = false; player.vy = 0; player.y = standingOn.y + standingOn.height;
+        player.stamina = Math.min(player.maxS, player.stamina + SETTINGS.staminaRecoverRate);
+        if (keys['a']||keys['arrowleft']) player.x -= SETTINGS.walkSpeed;
+        if (keys['d']||keys['arrowright']) player.x += SETTINGS.walkSpeed;
         if (keys['x'] && !prevKeys['x']) executeJump(0);
     } else {
         player.isHolding = false; player.vy -= SETTINGS.gravity; player.y += player.vy; player.x += player.vx;
-        if (keys['arrowleft'] || keys['a']) player.vx -= SETTINGS.airControl;
-        if (keys['arrowright'] || keys['d']) player.vx += SETTINGS.airControl;
+        if (keys['a']||keys['arrowleft']) player.vx -= SETTINGS.airControl;
+        if (keys['d']||keys['arrowright']) player.vx += SETTINGS.airControl;
         player.vx *= 0.97;
     }
 
     if (keys[' ']) player.charge = Math.min(SETTINGS.maxCharge, player.charge + 1.5);
-    
-    // 3. UI 更新與渲染
-    document.getElementById('stamina-bar').style.width = player.stamina + '%';
+
+    // 道具碰撞
+    items.forEach(it => {
+        if (it.active && player.x < it.x + it.w && player.x + player.w > it.x && player.y < it.y + it.h && player.y + player.h > it.y) {
+            it.active = false;
+            if (it.type === 'PINEAPPLE') player.stamina = Math.min(player.maxS, player.stamina + 45);
+            else player.chalk = Math.min(100, player.chalk + 40);
+        }
+    });
+
+    // HUD 更新
+    const ms = Date.now() - startTime;
+    document.getElementById('timer').innerText = `${String(Math.floor(ms/60000)).padStart(2,'0')}m${String(Math.floor((ms%60000)/1000)).padStart(2,'0')}s${String(Math.floor((ms%1000)/10)).padStart(2,'0')}`;
+    document.getElementById('stamina-bar').style.width = (player.stamina/player.maxS*100) + '%';
     document.getElementById('chalk-bar').style.width = player.chalk + '%';
     document.getElementById('floor').innerText = Math.floor(player.y / 400);
 
     render();
     prevKeys = {...keys};
-    cameraY += (player.y - 300 - cameraY) * 0.12;
+    cameraY += (player.y - 320 - cameraY) * 0.12;
     requestAnimationFrame(loop);
 }
 
+/** 渲染系統 (還原 render) **/
 function render() {
-    const ctx = document.getElementById('gameCanvas').getContext('2d');
     ctx.fillStyle = COLORS.SKY_TOP; ctx.fillRect(0,0,400,window.innerHeight);
-    
     ctx.save(); ctx.translate(0, window.innerHeight); ctx.scale(1, -1); ctx.translate(0, -cameraY);
 
-    // 畫 101 背景
+    // 背景橫條 (大樓細節)
     ctx.strokeStyle = COLORS.MULLION; ctx.globalAlpha = 0.3;
-    for(let y=0; y < 101*400; y+=40) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(400, y); ctx.stroke(); }
+    for (let y = Math.floor(cameraY/40)*40; y < cameraY + window.innerHeight + 40; y += 40) {
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(400, y); ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
 
-    // 畫踏板
-    grips.forEach(g => {
-        ctx.fillStyle = g.type === 'REST' ? COLORS.REST : COLORS.GRIP;
-        ctx.globalAlpha = 1; ctx.fillRect(g.x, g.y, g.w, g.h);
+    // 文字說明
+    worldTexts.forEach(t => {
+        ctx.save(); ctx.scale(1, -1); ctx.fillStyle = t.color; ctx.font = `bold ${t.size}px Arial`; ctx.fillText(t.text, t.x, -t.y); ctx.restore();
     });
 
-    // 畫玩家與縮放動畫
+    // 踏板
+    grips.forEach(g => { ctx.fillStyle = g.type === 'REST' ? COLORS.REST : COLORS.GRIP; ctx.fillRect(g.x, g.y, g.width, g.height); });
+
+    // 道具
+    items.forEach(it => {
+        if (it.active) {
+            ctx.fillStyle = COLORS.ITEM_BG; ctx.fillRect(it.x, it.y, it.w, it.h);
+            ctx.save(); ctx.scale(1, -1); ctx.textAlign = 'center'; ctx.font = '24px Arial'; ctx.fillText(it.type==='PINEAPPLE'?'🍍':'🥡', it.x + 22, -it.y - 12); ctx.restore();
+        }
+    });
+
+    // 玩家方塊壓縮與蓄力條
     const squash = player.charge / SETTINGS.maxCharge;
     const dW = player.w * (1 + squash * 0.3), dH = player.h * (1 - squash * 0.4);
-    ctx.fillStyle = COLORS.PLAYER; ctx.fillRect(player.x - (dW-player.w)/2, player.y, dW, dH);
     
+    // 蓄力外框與光效
+    if (player.charge > 5) {
+        ctx.strokeStyle = player.charge >= SETTINGS.maxCharge ? '#ef4444' : '#fff';
+        ctx.lineWidth = 2; ctx.strokeRect(player.x - (dW-player.w)/2 - 4, player.y - 4, dW + 8, dH + 8);
+        ctx.fillStyle = player.charge >= SETTINGS.maxCharge ? '#ef4444' : '#fff';
+        ctx.fillRect(player.x, player.y - 18, (player.w * squash), 6);
+    }
+
+    ctx.fillStyle = COLORS.PLAYER; ctx.fillRect(player.x - (dW-player.w)/2, player.y, dW, dH);
     ctx.restore();
 }
 </script>
