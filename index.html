@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>101 攀爬者 | 動態同步修正版</title>
+    <title>101 攀爬者 | Pro 最終修正版</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         body { background-color: #020617; margin: 0; overflow: hidden; font-family: 'Courier New', Courier, monospace; touch-action: none; }
@@ -14,7 +14,7 @@
 <body>
 
 <div id="game-container">
-    <div id="ui" class="absolute top-0 left-0 w-full p-4 pointer-events-none z-10 hidden">
+    <div id="ui" class="absolute top-0 left-0 w-full p-4 pointer-events-none z-10 hidden transition-opacity duration-300">
         <div class="bg-slate-900/80 backdrop-blur-sm border border-slate-700/50 rounded-xl p-4 shadow-xl text-white">
             <div class="flex justify-between items-end mb-2">
                 <div>
@@ -52,23 +52,36 @@
     <canvas id="gameCanvas"></canvas>
 
     <div id="overlay" class="absolute inset-0 z-20 flex flex-col items-center justify-center bg-slate-950/95 p-6 text-center">
-        <div id="start-screen" class="space-y-8">
+        <div id="start-screen" class="space-y-8 animate-fade-in">
             <div class="text-8xl mb-4 animate-bounce">🧗</div>
-            <h1 class="text-5xl font-black italic text-transparent bg-clip-text bg-gradient-to-br from-teal-300 to-sky-600">101 CLIMBERS</h1>
-            <button onclick="Game.start()" class="w-full px-8 py-4 bg-teal-600 hover:bg-teal-500 text-white font-black text-xl rounded-xl transition-all shadow-xl">開始攀登</button>
-        </div>
-        <div id="end-screen" class="hidden space-y-6 text-white">
-            <h2 id="end-title" class="text-4xl font-black"></h2>
-            <div class="bg-slate-900 p-6 rounded-xl border border-slate-800">
-                <div id="end-floor" class="text-3xl font-bold text-teal-400">0 F</div>
-                <div id="end-time" class="text-xl font-mono">00:00:00</div>
+            <div>
+                <h1 class="text-5xl font-black italic text-transparent bg-clip-text bg-gradient-to-br from-teal-300 to-sky-600 mb-2">101 CLIMBERS</h1>
+                <p class="text-slate-400 text-xs tracking-[0.2em] uppercase">台北天際線挑戰</p>
             </div>
-            <button onclick="location.reload()" class="px-8 py-3 bg-slate-700 hover:bg-slate-600 text-white font-bold rounded-lg w-full">再次挑戰</button>
+            <div class="grid grid-cols-2 gap-3 text-left bg-slate-900/50 p-6 rounded-2xl border border-slate-800 text-sm text-slate-300">
+                <div class="flex items-center gap-2"><span class="bg-slate-700 px-2 py-1 rounded text-xs font-bold text-white">Z</span> 抓握 (Hold)</div>
+                <div class="flex items-center gap-2"><span class="bg-slate-700 px-2 py-1 rounded text-xs font-bold text-white">X</span> 跳躍 (Jump)</div>
+                <div class="flex items-center gap-2 col-span-2"><span class="bg-slate-700 px-2 py-1 rounded text-xs font-bold text-white">SPACE</span> 蓄力 (Charge)</div>
+                <div class="col-span-2 text-xs text-orange-400 mt-2 border-t border-slate-800 pt-2 text-center">靜止休息 2 秒可加速恢復體力</div>
+            </div>
+            <button onclick="Game.start()" class="w-full px-8 py-4 bg-teal-600 hover:bg-teal-500 text-white font-black text-xl rounded-xl transition-all shadow-[0_0_20px_rgba(20,184,166,0.3)] hover:scale-105">開始攀登</button>
+        </div>
+
+        <div id="end-screen" class="hidden space-y-6">
+            <h2 id="end-title" class="text-4xl font-black text-white"></h2>
+            <div class="bg-slate-900 p-6 rounded-xl border border-slate-800 space-y-2">
+                <div class="text-slate-400 text-sm">最終高度</div>
+                <div class="text-3xl font-bold text-teal-400"><span id="end-floor">0</span> F</div>
+                <div class="text-slate-400 text-sm mt-4">花費時間</div>
+                <div id="end-time" class="text-xl font-mono text-white">00:00:00</div>
+            </div>
+            <button onclick="location.reload()" class="px-8 py-3 bg-slate-700 hover:bg-slate-600 text-white font-bold rounded-lg w-full transition-colors">再次挑戰</button>
         </div>
     </div>
 </div>
 
 <script>
+// --- Constants ---
 const CONSTANTS = {
     COLORS: {
         SKY_TOP: '#020617', SKY_BOTTOM: '#0f172a',
@@ -76,7 +89,7 @@ const CONSTANTS = {
         PLAYER: '#38bdf8', PLAYER_CHARGE: '#ffffff', PLAYER_MAX_CHARGE: '#ef4444',
         GRIP_NORMAL: '#fbbf24', GRIP_REST: '#22c55e',
         ITEM_BG: '#1e293b', BORDER_PINEAPPLE: '#fbbf24', BORDER_CHALK: '#94a3b8',
-        WIND: 'rgba(255, 255, 255, 0.3)'
+        WIND: 'rgba(255, 255, 255, 0.3)', REST_GLOW: '#4ade80'
     },
     SETTINGS: {
         floorHeight: 400, buildingWidth: 400,
@@ -86,7 +99,7 @@ const CONSTANTS = {
         staminaDrain: 0.15, staminaRecover: 0.5,
         chalkDrain: 0.12, chalkRefill: 40,
         maxChalk: 100, pineappleBonus: 45,
-        restTimeToRecover: 120 // 2秒休息判定
+        restTimeReq: 120 // 2 seconds @ 60fps
     },
     KEYS: { UP: ['arrowup','w'], DOWN: ['arrowdown','s'], LEFT: ['arrowleft','a'], RIGHT: ['arrowright','d'], GRAB: ['z'], JUMP: ['x'], CHARGE: [' '] }
 };
@@ -96,7 +109,11 @@ const Game = {
     state: {
         active: false, startTime: 0,
         cameraY: 0, floor: 0, celebrationTime: 0,
-        player: { x: 0, y: 0, w: 24, h: 32, vx: 0, vy: 0, stamina: 100, maxStamina: 100, chalk: 100, isHolding: false, grabLock: false, charge: 0, restTimer: 0 },
+        player: { 
+            x: 0, y: 0, w: 24, h: 32, vx: 0, vy: 0, 
+            stamina: 100, maxStamina: 100, chalk: 100, 
+            isHolding: false, grabLock: false, charge: 0, restTimer: 0 
+        },
         inputs: {}, prevInputs: {},
         objects: { grips: [], items: [], texts: [], wind: [], fireworks: [], flag: null },
         wind: { force: 0, timer: 0 }
@@ -130,11 +147,12 @@ const Game = {
     generateLevel() {
         const { grips, items, texts } = this.state.objects;
         const { SETTINGS } = CONSTANTS;
-        let curY = 0, lastX = 200, normalCount = 0;
+        let curY = 0, lastX = 200;
+        let patternCounter = 0; // 用於計算 1綠:N黃 的循環
 
         const addGrip = (x, y, w, h, type, extra = {}) => {
             if (grips.some(g => Math.abs(g.y - y) < 40)) return false;
-            grips.push({ x, y, width: w, height: h, type, ...extra });
+            grips.push({ x, y, w, h, type, ...extra });
             lastX = x + w/2; return true;
         };
 
@@ -145,41 +163,70 @@ const Game = {
             return min + Math.random() * (max - min);
         };
 
+        // 1. 地基
         addGrip(0, 0, 400, 60, 'REST');
+        texts.push({ x: 200, y: 150, text: "1F" });
+        texts.push({ x: 200, y: 120, text: "按 'Z' 抓握 / 'X' 跳躍 / 'SPACE' 蓄力", size: 14 });
+
         curY = 180;
+        const spawnPineapples = (minF, maxF, count) => {
+            for(let i=0; i<count; i++) {
+                const fy = (minF + Math.random()*(maxF-minF)) * SETTINGS.floorHeight;
+                items.push({ x: 0, y: fy, w: 44, h: 44, type: 'PINEAPPLE', active: true, pendingPlace: true });
+            }
+        };
+        spawnPineapples(1, 30, 10); spawnPineapples(30, 60, 8); spawnPineapples(60, 90, 3);
 
         while (curY < 101 * SETTINGS.floorHeight) {
             const floor = Math.floor(curY / SETTINGS.floorHeight);
             let type = 'NORMAL';
             let w, h, jumpDist, extra = {};
 
-            // 1. 特殊大樓層地板 (30, 60, 90)
+            // 檢查點：強制大平台 (30, 60, 90F)
             if (floor === 30 || floor === 60 || floor === 90) {
                 type = 'REST'; w = 300; h = 40; jumpDist = 200;
                 addGrip(50, curY, w, h, type);
                 texts.push({ x: 200, y: curY + 60, text: `${floor}F 大休息區`, size: 14 });
-                curY += jumpDist; continue;
+                curY += jumpDist;
+                patternCounter = 0; // 重置循環
+                continue;
             }
 
-            // 2. 分段關卡邏輯
-            if (floor < 20) { // 初期
-                type = (normalCount >= 2) ? 'REST' : 'NORMAL';
-                w = type === 'REST' ? 150 : 60; h = type === 'REST' ? 24 : 140; jumpDist = 140;
-            } else if (floor < 45) { // 20F-45F: 1綠接3黃
-                type = (normalCount >= 3) ? 'REST' : 'NORMAL';
+            // 階段 1: 0-20F (教學區，較簡單)
+            if (floor < 20) {
+                if (curY < 5 * SETTINGS.floorHeight) { // 1-5F 超簡單
+                    type = 'REST'; w = 150 + Math.random()*50; h = 24; jumpDist = 120;
+                } else {
+                    type = (patternCounter >= 2) ? 'REST' : 'NORMAL';
+                    if (type === 'REST') patternCounter = 0; else patternCounter++;
+                    w = type === 'REST' ? 150 : 60; h = type === 'REST' ? 24 : 140; jumpDist = 140;
+                }
+            }
+            // 階段 2: 20-45F (1綠 : 3黃)
+            else if (floor < 45) {
+                type = (patternCounter >= 3) ? 'REST' : 'NORMAL';
+                if (type === 'REST') patternCounter = 0; else patternCounter++;
                 w = type === 'REST' ? 120 : 50; h = type === 'REST' ? 24 : 160; jumpDist = 160;
-            } else if (floor < 65) { // 45F-65F: 1綠接4-5黃
-                const targetNormal = 4 + Math.floor(Math.random()*2);
-                type = (normalCount >= targetNormal) ? 'REST' : 'NORMAL';
+            }
+            // 階段 3: 45-65F (1綠 : 4~5黃)
+            else if (floor < 65) {
+                const threshold = 4 + Math.floor(Math.random()*2); // 4 or 5
+                type = (patternCounter >= threshold) ? 'REST' : 'NORMAL';
+                if (type === 'REST') patternCounter = 0; else patternCounter++;
                 w = type === 'REST' ? 100 : 40; h = type === 'REST' ? 24 : 180; jumpDist = 180;
-                if (type === 'NORMAL' && Math.random() > 0.5) extra = { vx: 2, range: 60, startX: 0 };
-            } else { // 65F+: 細長黃色, 綠色極稀少且短
-                type = (Math.random() < 0.15) ? 'REST' : 'NORMAL';
-                w = type === 'REST' ? 60 : 20 + Math.random()*20; h = type === 'REST' ? 24 : 200 + Math.random()*100; jumpDist = 200;
-                if (type === 'NORMAL') extra = { vx: 2.5, range: 80, startX: 0 };
+                if (type === 'NORMAL' && Math.random() > 0.5) extra = { vx: 1.5, range: 60, startX: 0 };
+            }
+            // 階段 4: 65F+ (高難度：細長黃色，綠色稀少)
+            else {
+                // 10% 機率出現休息，否則全是黃色
+                type = (Math.random() < 0.1) ? 'REST' : 'NORMAL'; 
+                // 黃色色塊寬度極窄 (20-30px)
+                w = type === 'REST' ? 60 : 20 + Math.random()*10; 
+                h = type === 'REST' ? 24 : 200 + Math.random()*100; 
+                jumpDist = 200;
+                if (type === 'NORMAL') extra = { vx: 2.5, range: 100, startX: 0 };
             }
 
-            normalCount = (type === 'REST') ? 0 : normalCount + 1;
             let tryX = getNextX(w, 180, curY);
             if (extra.vx) {
                 extra.startX = tryX;
@@ -188,6 +235,7 @@ const Game = {
             }
 
             if (addGrip(extra.startX || tryX, curY, w, h, type, extra)) {
+                items.forEach(it => { if (it.pendingPlace && Math.abs(it.y - curY) < 200) { it.x = lastX - 22; it.y = curY + h + 20; it.pendingPlace = false; } });
                 if (type === 'REST' && floor % 5 === 0) texts.push({ x: lastX, y: curY + 60, text: `${floor}F`, size: 14 });
                 curY += jumpDist;
             } else curY += 50;
@@ -196,30 +244,78 @@ const Game = {
         const finalY = 101 * SETTINGS.floorHeight;
         addGrip(100, finalY, 200, 40, 'REST');
         this.state.objects.flag = { x: 200, y: finalY + 40, w: 40, h: 60 };
+        texts.push({ x: 200, y: finalY + 120, text: "登頂！", size: 20 });
+    },
+
+    checkChalkRegen() {
+        const { items } = this.state.objects;
+        const { player, floor } = this.state;
+        const nearby = items.filter(it => it.type === 'CHALK' && it.active && Math.abs(it.y - player.y) < 800).length;
+        let max = floor < 30 ? 4 : (floor < 60 ? 3 : (floor < 90 ? 2 : 1));
+        if (nearby < max && Math.random() < 0.02) {
+             const spawnY = player.y + 300 + Math.random() * 300;
+             items.push({ x: Math.random() * 300 + 50, y: spawnY, w: 44, h: 44, type: 'CHALK', active: true, floatOffset: 0 });
+        }
     },
 
     physics(time) {
         const { player, objects, wind } = this.state;
         const { SETTINGS } = CONSTANTS;
 
-        objects.grips.forEach(g => { if (g.vx) { g.prevX = g.x || g.startX; g.x = g.startX + Math.sin(time / 500 * g.vx) * g.range; }});
+        // 1. 更新移動平台位置
+        objects.grips.forEach(g => { 
+            if (g.vx) { 
+                g.prevX = g.x; // 記錄上一幀位置 (關鍵修復 1)
+                g.x = g.startX + Math.sin(time / 500 * g.vx) * g.range; 
+            }
+        });
+
+        if (this.state.floor >= 90) {
+            wind.timer++;
+            if (wind.timer > 200) { wind.force = (Math.random()-0.5) * 2.0; wind.timer = 0; }
+            player.vx += wind.force * 0.1;
+        }
+
+        this.checkChalkRegen();
 
         // 碰撞偵測優化
-        let standingOn = objects.grips.find(g => g.type === 'REST' && player.x + player.w > g.x && player.x < g.x + g.w && player.y <= g.y + g.h + 2 && player.y >= g.y + g.h - 15 && player.vy <= 0);
-        let currentGrip = objects.grips.find(g => player.x + player.w > g.x && player.x < g.x + g.w && player.y + player.h > g.y && player.y < g.y + g.h);
+        // 關鍵修復 2: 只要玩家是向下掉(vy<=0)且在綠色塊範圍內，強制判定為站立 (Fall Catch)
+        let standingOn = objects.grips.find(g => 
+            g.type === 'REST' && 
+            player.x + player.w > g.x && player.x < g.x + g.w && 
+            player.y <= g.y + g.h + 5 && player.y >= g.y + g.h - 20 && 
+            player.vy <= 0
+        );
+
+        let currentGrip = objects.grips.find(g => 
+            player.x + player.w > g.x && player.x < g.x + g.w && 
+            player.y + player.h > g.y && player.y < g.y + g.h
+        );
+
+        // 勝利判定
+        if (objects.flag && player.x < objects.flag.x + objects.flag.w && player.x + player.w > objects.flag.x &&
+            player.y < objects.flag.y + objects.flag.h && player.y + player.h > objects.flag.y) { this.victory(); return; }
 
         const holdingInput = this.isPressed('GRAB');
         const jumpInput = this.justPressed('JUMP');
         const chargeInput = this.isPressed('CHARGE');
         const wasChargeInput = this.wasPressed('CHARGE');
-
-        // Bug 3: 蓄力狀態鎖定移動
+        
+        // 關鍵修復 3: 蓄力時鎖定移動
         const isCharging = player.charge > 0;
 
+        if (!holdingInput) player.grabLock = false;
+
+        // --- CLIMBING ---
         if (holdingInput && currentGrip && !player.grabLock && player.stamina > 0) {
             player.isHolding = true; player.vy = 0; player.vx = 0;
-            // Bug 1: 跟隨移動平台
+            
+            // 關鍵修復 1: 同步平台移動
             if (currentGrip.vx) { player.x += (currentGrip.x - currentGrip.prevX); }
+
+            player.stamina -= SETTINGS.staminaDrain;
+            player.chalk = Math.max(0, player.chalk - SETTINGS.chalkDrain);
+            if (player.chalk <= 0) player.stamina -= SETTINGS.staminaDrain;
 
             if (!isCharging) {
                 if (this.isPressed('UP')) player.y += SETTINGS.climbSpeed;
@@ -227,42 +323,72 @@ const Game = {
                 if (this.isPressed('LEFT')) player.x -= SETTINGS.climbSpeed;
                 if (this.isPressed('RIGHT')) player.x += SETTINGS.climbSpeed;
             }
-            
+
+            // 限制攀爬範圍
             player.x = Math.max(currentGrip.x, Math.min(currentGrip.x + currentGrip.w - player.w, player.x));
             player.y = Math.min(currentGrip.y + currentGrip.h - player.h, player.y);
 
-            if (chargeInput) player.charge = Math.min(SETTINGS.maxCharge, player.charge + 1.5);
-            else if (wasChargeInput || jumpInput) this.executeJump();
-        } else if (standingOn) {
-            player.isHolding = false; player.vy = 0; player.y = standingOn.y + standingOn.h;
-            if (standingOn.vx) player.x += (standingOn.x - standingOn.prevX);
+            // 快速上牆
+            if (currentGrip.type === 'REST' && this.isPressed('UP') && player.y + player.h >= currentGrip.y + currentGrip.h - 10) {
+                 player.isHolding = false; player.y = currentGrip.y + currentGrip.h;
+            }
 
-            // Bug 4: 休息恢復與視覺計時
-            const isMoving = this.isPressed('LEFT') || this.isPressed('RIGHT') || isCharging;
-            if (!isMoving) player.restTimer++; else player.restTimer = 0;
+            if (chargeInput) player.charge = Math.min(SETTINGS.maxCharge, player.charge + 1.5);
+            else if (wasChargeInput) this.executeJump();
+            else if (jumpInput) this.executeJump();
+
+        } 
+        // --- STANDING ---
+        else if (standingOn) {
+            player.isHolding = false; player.vy = 0; player.y = standingOn.y + standingOn.h;
             
-            if (player.restTimer >= SETTINGS.restTimeToRecover) {
-                player.stamina = Math.min(player.maxStamina, player.stamina + SETTINGS.staminaRecover);
+            // 同步平台移動
+            if (standingOn.vx) { player.x += (standingOn.x - standingOn.prevX); }
+
+            // 關鍵修復 4: 靜止 2 秒後恢復體力
+            const isMoving = this.isPressed('LEFT') || this.isPressed('RIGHT') || isCharging || jumpInput;
+            if (!isMoving) player.restTimer++; else player.restTimer = 0;
+
+            if (player.restTimer >= SETTINGS.restTimeReq) {
+                player.stamina = Math.min(player.maxStamina, player.stamina + SETTINGS.staminaRecover * 1.5); // 加速恢復
             }
 
             if (!isCharging) {
                 if (this.isPressed('LEFT')) player.vx -= 1;
                 if (this.isPressed('RIGHT')) player.vx += 1;
+            } else {
+                player.vx = 0; // 蓄力時完全靜止
             }
             player.vx *= SETTINGS.friction;
 
             if (chargeInput) player.charge = Math.min(SETTINGS.maxCharge, player.charge + 1.5);
             else if (wasChargeInput || jumpInput) this.executeJump();
-        } else {
-            // Bug 2: 摔落時碰綠色塊站住
-            player.isHolding = false; player.vy -= SETTINGS.gravity; player.y += player.vy; player.x += player.vx;
+
+        } 
+        // --- AIR ---
+        else {
+            player.isHolding = false; player.vy -= SETTINGS.gravity; 
             player.restTimer = 0;
+            player.vx *= SETTINGS.airResistance;
             if (this.isPressed('LEFT')) player.vx -= SETTINGS.airControl;
             if (this.isPressed('RIGHT')) player.vx += SETTINGS.airControl;
-            player.vx *= SETTINGS.airResistance;
         }
 
-        player.x = Math.max(0, Math.min(400 - player.w, player.x));
+        player.x += player.vx; player.y += player.vy;
+        if (player.x < 0) { player.x = 0; player.vx = 0; }
+        if (player.x > 400 - player.w) { player.x = 400 - player.w; player.vx = 0; }
+
+        // 道具與失敗判定
+        objects.items.forEach(it => {
+            if (!it.active || it.pendingPlace) return;
+            if (player.x < it.x + it.w && player.x + player.w > it.x && player.y < it.y + it.h && player.y + player.h > it.y) {
+                it.active = false;
+                if (it.type === 'PINEAPPLE') { player.maxStamina += 10; player.stamina = Math.min(player.maxStamina, player.stamina + SETTINGS.pineappleBonus); }
+                else { player.chalk = 100; }
+            }
+        });
+
+        if (player.y < this.state.cameraY - 400) this.gameOver();
     },
 
     executeJump() {
@@ -277,9 +403,21 @@ const Game = {
         if (this.isPressed('GRAB')) player.grabLock = true;
     },
 
-    victory() { this.state.active = false; document.getElementById('end-screen').classList.remove('hidden'); document.getElementById('end-title').innerText = "登頂成功！"; this.updateEndStats(); },
+    victory() { this.state.active = false; document.getElementById('end-screen').classList.remove('hidden'); document.getElementById('end-title').innerText = "登頂成功！"; this.updateEndStats(); this.celebrationLoop(); },
     gameOver() { this.state.active = false; document.getElementById('end-screen').classList.remove('hidden'); document.getElementById('end-title').innerText = "挑戰失敗..."; document.getElementById('end-title').classList.add('text-red-500'); this.updateEndStats(); },
     updateEndStats() { document.getElementById('end-floor').innerText = this.state.floor + " F"; document.getElementById('end-time').innerText = document.getElementById('timer-display').innerText; document.getElementById('ui').classList.add('hidden'); },
+    createFirework() {
+        const x = Math.random() * 400; const y = this.state.cameraY + 200 + Math.random() * 400; const color = `hsl(${Math.random()*360}, 100%, 50%)`;
+        for(let i=0; i<20; i++) { const angle = Math.random() * Math.PI * 2; const speed = Math.random() * 5; this.state.objects.fireworks.push({ x, y, vx: Math.cos(angle)*speed, vy: Math.sin(angle)*speed, color, life: 60 }); }
+    },
+    celebrationLoop() {
+        this.state.celebrationTime++;
+        if (this.state.celebrationTime % 20 === 0) this.createFirework();
+        const { fireworks } = this.state.objects;
+        fireworks.forEach(f => { f.x += f.vx; f.y += f.vy; f.vy += 0.1; f.life--; });
+        this.state.objects.fireworks = fireworks.filter(f => f.life > 0);
+        this.render(); requestAnimationFrame(() => this.celebrationLoop());
+    },
 
     loop(time) {
         if (!this.state.active) return;
@@ -289,6 +427,8 @@ const Game = {
         document.getElementById('floor-display').innerText = this.state.floor;
         document.getElementById('stamina-val').innerText = `${Math.floor(this.state.player.stamina)} / ${Math.floor(this.state.player.maxStamina)}`;
         document.getElementById('stamina-bar').style.width = (this.state.player.stamina / this.state.player.maxStamina * 100) + '%';
+        document.getElementById('chalk-val').innerText = Math.floor(this.state.player.chalk) + '%';
+        document.getElementById('chalk-bar').style.width = this.state.player.chalk + '%';
         const diff = Date.now() - this.state.startTime;
         document.getElementById('timer-display').innerText = `${Math.floor(diff/60000).toString().padStart(2,'0')}:${Math.floor((diff/1000)%60).toString().padStart(2,'0')}:${Math.floor((diff%1000)/10).toString().padStart(2,'0')}`;
         this.render();
@@ -311,22 +451,42 @@ const Game = {
         });
 
         objects.texts.forEach(t => { ctx.save(); ctx.translate(t.x, t.y); ctx.scale(1, -1); ctx.fillStyle = "#fff"; ctx.font = "14px Arial"; ctx.fillText(t.text, 0, 0); ctx.restore(); });
+        
+        if (objects.flag) {
+            const f = objects.flag;
+            ctx.fillStyle = "#fff"; ctx.fillRect(f.x, f.y, 4, f.h);
+            ctx.fillStyle = "#f43f5e"; ctx.beginPath(); ctx.moveTo(f.x+4, f.y+f.h); ctx.lineTo(f.x+40, f.y+f.h-15); ctx.lineTo(f.x+4, f.y+f.h-30); ctx.fill();
+        }
+
+        objects.items.forEach(it => {
+            if (!it.active || it.pendingPlace) return;
+            it.floatOffset = (it.floatOffset || 0) + 0.1; const fy = Math.sin(it.floatOffset) * 5;
+            ctx.fillStyle = COLORS.ITEM_BG; ctx.strokeStyle = it.type==='PINEAPPLE'?COLORS.BORDER_PINEAPPLE:COLORS.BORDER_CHALK;
+            ctx.lineWidth = 2; ctx.beginPath(); ctx.roundRect(it.x, it.y + fy, it.w, it.h, 8); ctx.fill(); ctx.stroke();
+            ctx.save(); ctx.translate(it.x + it.w/2, it.y + it.h/2 + fy); ctx.scale(1, -1); ctx.font = "24px Arial"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(it.type==='PINEAPPLE'?'🍍':'🥡', 0, 0); ctx.restore();
+        });
+
+        objects.fireworks.forEach(f => { ctx.fillStyle = f.color; ctx.fillRect(f.x, f.y, 4, 4); });
 
         const squash = player.charge / CONSTANTS.SETTINGS.maxCharge;
         const dW = player.w * (1 + squash * 0.4), dH = player.h * (1 - squash * 0.4), pX = player.x - (dW - player.w) / 2;
 
-        // Bug 4: 休息發光視覺效果
-        if (player.restTimer >= CONSTANTS.SETTINGS.restTimeToRecover) {
+        // 關鍵修復 4: 休息時的視覺發光 (Rest Glow)
+        if (player.restTimer >= CONSTANTS.SETTINGS.restTimeReq) {
             ctx.save();
-            ctx.shadowBlur = 10 + Math.sin(Date.now()/200)*5;
-            ctx.shadowColor = "#4ade80";
-            ctx.strokeStyle = "#4ade80";
+            ctx.shadowBlur = 15 + Math.sin(Date.now() / 150) * 5; // 呼吸燈效果
+            ctx.shadowColor = CONSTANTS.COLORS.REST_GLOW;
+            ctx.strokeStyle = CONSTANTS.COLORS.REST_GLOW;
+            ctx.lineWidth = 2;
             ctx.strokeRect(pX, player.y, dW, dH);
             ctx.restore();
         }
 
         if (player.isHolding) { ctx.save(); ctx.strokeStyle = "rgba(255, 255, 255, 0.8)"; ctx.setLineDash([6, 4]); ctx.strokeRect(pX - 6, player.y - 6, dW + 12, dH + 12); ctx.restore(); }
+        if (player.charge > 5) { ctx.strokeStyle = player.charge >= CONSTANTS.SETTINGS.maxCharge ? COLORS.PLAYER_MAX_CHARGE : '#fff'; ctx.lineWidth = 2; ctx.strokeRect(pX - 2, player.y - 2, dW + 4, dH + 4); }
+
         ctx.fillStyle = COLORS.PLAYER; ctx.fillRect(pX, player.y, dW, dH);
+        if (player.charge > 0) { ctx.fillStyle = "#fff"; ctx.fillRect(pX, player.y + dH + 8, dW * squash, 4); }
         ctx.restore();
     }
 };
